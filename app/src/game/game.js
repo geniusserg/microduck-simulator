@@ -144,6 +144,30 @@ async function boot({ scene, camera, renderer }) {
     );
   };
 
+  // ── Prefetch static assets in parallel with WASM runtime chunks ─────
+  // Kick off GLB + ONNX policy downloads immediately so they overlap with
+  // the @mujoco/mujoco + onnxruntime-web chunk and WASM downloads instead
+  // of waiting in a serial waterfall behind MjVFS setup. Attach no-op
+  // catch handlers so a early network error only surfaces when awaited at
+  // its traced BIOS step.
+  const glbPrefetch = loadGlbGeometries();
+  glbPrefetch.catch(() => {});
+  const fetchPolicyBytes = (url) =>
+    fetch(signed(url)).then((r) => {
+      if (!r.ok) throw new Error(`policy fetch ${r.status}: ${url}`);
+      return r.arrayBuffer();
+    });
+  const policyPrefetch = {
+    walk: fetchPolicyBytes(POLICIES.walk),
+    sitstand: fetchPolicyBytes(POLICIES.sitstand),
+    roll: fetchPolicyBytes(POLICIES.roll),
+    kickL: fetchPolicyBytes(POLICIES.kickL),
+    kickR: fetchPolicyBytes(POLICIES.kickR),
+    groundpick: fetchPolicyBytes(POLICIES.groundpick),
+    stand: fetchPolicyBytes(POLICIES.stand),
+  };
+  for (const p of Object.values(policyPrefetch)) p.catch(() => {});
+
   // ── Runtimes (vendored, lazy chunks) ─────────────────────────────────
   const [{ default: loadMujocoFactory }, ort] = await traced(
     "RUNTIME MODULES",
@@ -329,22 +353,24 @@ async function boot({ scene, camera, renderer }) {
   const donePolicies = bootLine("LOADING POLICIES");
   const sessionOpts = { executionProviders: ["wasm"] };
   let policiesLoaded = 0;
-  const bootPolicy = (url) =>
-    ort.InferenceSession.create(signed(url), sessionOpts).then((s) => {
-      donePolicies.progress(`${++policiesLoaded}/7`);
-      return s;
-    });
+  const bootPolicy = (bufPromise) =>
+    bufPromise
+      .then((buf) => ort.InferenceSession.create(new Uint8Array(buf), sessionOpts))
+      .then((s) => {
+        donePolicies.progress(`${++policiesLoaded}/7`);
+        return s;
+      });
   try {
     [sessions.walk, sessions.sitstand, sessions.roll, sessions.kickL, sessions.kickR,
      sessions.groundpick, sessions.stand] =
       await Promise.all([
-        bootPolicy(POLICIES.walk),
-        bootPolicy(POLICIES.sitstand),
-        bootPolicy(POLICIES.roll),
-        bootPolicy(POLICIES.kickL),
-        bootPolicy(POLICIES.kickR),
-        bootPolicy(POLICIES.groundpick),
-        bootPolicy(POLICIES.stand),
+        bootPolicy(policyPrefetch.walk),
+        bootPolicy(policyPrefetch.sitstand),
+        bootPolicy(policyPrefetch.roll),
+        bootPolicy(policyPrefetch.kickL),
+        bootPolicy(policyPrefetch.kickR),
+        bootPolicy(policyPrefetch.groundpick),
+        bootPolicy(policyPrefetch.stand),
       ]);
   } catch (err) {
     donePolicies("FAILED");

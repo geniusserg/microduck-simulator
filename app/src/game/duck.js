@@ -29,25 +29,37 @@ import { signed } from "./signed.js";
 // `?all=1` for debugging.
 const HIDDEN_MESHES = new Set([]);
 
+const kinematicsPromises = new Map();
+
 export async function loadKinematics(url) {
-  // Same cache-buster as the GLB: force-cache would otherwise keep
-  // serving a stale kinematics.json after the mesh list changes.
-  const r = await fetch(signed(`${url}?v=${MESH_VERSION}`), { cache: "force-cache" });
-  if (!r.ok) throw new Error(`kinematics fetch ${r.status}`);
-  const k = await r.json();
-  // The exported mesh_dir is root-absolute ("/robot/mjlab/meshes"), which
-  // breaks when the app is served under a prefix (/play/). Rebase it like
-  // every other asset URL (MODEL_DIR is "./robot/mjlab").
-  if (typeof k.mesh_dir === "string" && k.mesh_dir.startsWith("/")) {
-    k.mesh_dir = `.${k.mesh_dir}`;
+  const lite = new URLSearchParams(location.search).get("lite") === "1";
+  const key = `${url}|${lite ? "1" : "0"}`;
+  if (!kinematicsPromises.has(key)) {
+    kinematicsPromises.set(
+      key,
+      (async () => {
+        // Same cache-buster as the GLB: force-cache would otherwise keep
+        // serving a stale kinematics.json after the mesh list changes.
+        const r = await fetch(signed(`${url}?v=${MESH_VERSION}`), { cache: "force-cache" });
+        if (!r.ok) throw new Error(`kinematics fetch ${r.status}`);
+        const k = await r.json();
+        // The exported mesh_dir is root-absolute ("/robot/mjlab/meshes"), which
+        // breaks when the app is served under a prefix (/play/). Rebase it like
+        // every other asset URL (MODEL_DIR is "./robot/mjlab").
+        if (typeof k.mesh_dir === "string" && k.mesh_dir.startsWith("/")) {
+          k.mesh_dir = `.${k.mesh_dir}`;
+        }
+        // Full-resolution meshes by default (the reduction will be redone
+        // interactively in Blender later). `?lite=1` opts into a decimated
+        // meshes-lite/ sibling if present.
+        if (lite) {
+          k.mesh_dir = k.mesh_dir.replace(/\/meshes$/, "/meshes-lite");
+        }
+        return k;
+      })(),
+    );
   }
-  // Full-resolution meshes by default (the reduction will be redone
-  // interactively in Blender later). `?lite=1` opts into a decimated
-  // meshes-lite/ sibling if present.
-  if (new URLSearchParams(location.search).get("lite") === "1") {
-    k.mesh_dir = k.mesh_dir.replace(/\/meshes$/, "/meshes-lite");
-  }
-  return k;
+  return kinematicsPromises.get(key);
 }
 
 // One GLB, named meshes matching kinematics geom.mesh (e.g. "left_shell.stl").
