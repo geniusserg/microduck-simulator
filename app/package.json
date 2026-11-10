@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "test": "node --test \"test/**/*.test.js\"",
+    "test": "node --test test",
     "build": "vite build",
     "preview": "vite preview"
   },
