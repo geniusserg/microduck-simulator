@@ -61,7 +61,8 @@ import { loadCustomPolicy as loadCustomPolicyModule, scriptCommandAt } from "./c
 import { createWinter, showBlades,penguinToy } from "./winter.js";
 import { dressForChristmas } from "./christmas.js";
 import {skateImpact} from "./impact.js";
-import {sportsField,createMatch,goalBars} from "./sports.js";
+import { sportEffects } from "./sport-effects.js";
+import {sportsField,createMatch,goalBars,FOOTBALL_RADIUS,isRace} from "./sports.js";
 import { createWander } from "./wander.js";
 import {saveClip,loadClip} from "./recordings.js";
 import { currentVoice,playVoice,voiceFrame, stopVoice, playReaction } from "./voice.js";
@@ -233,7 +234,7 @@ async function boot({ scene, camera, renderer }) {
     for(const [x,y,z,w,d,h] of goalBars) goals.appendChild(el("geom",{type:"box",pos:[x,y,z].join(" "),size:[w,d,h].join(" ")}));
     doc.querySelector("worldbody").appendChild(goals);
     // Back net behind each goal mouth catches shots and remains solid to both skaters.
-    for(const side of [-1,1]) goals.appendChild(el("geom",{type:"box",size:".009 .52 .16",pos:`${side*(ARENA_HALF-.19)} 0 .16`}));
+    for(const side of [-1,1]) goals.appendChild(el("geom",{type:"box",size:".009 .52 .16",pos:`${side*(ARENA_HALF-.09)} 0 .16`}));
     // Arena walls: four static boxes (no joints, so no qpos/keyframe
     // impact); default contype/conaffinity collides with ball and duck.
     const ht = 0.05 / 2, hh = 0.25 / 2;
@@ -267,7 +268,7 @@ async function boot({ scene, camera, renderer }) {
     // condim 6 enables the torsional + rolling friction components; with
     // the default condim 3 a rolling ball never decelerates.
     ballBody.appendChild(el("geom", {
-      name: "ball_geom", type: "sphere", size: String(BALL_RADIUS),
+      name: "ball_geom", type: "sphere", size: String(FOOTBALL_RADIUS),
       mass: "0.03", friction: "0.4 0.01 0.003", solref: "0.03 0.4", condim: "6",
     }));
     doc.querySelector("worldbody").appendChild(ballBody);
@@ -618,6 +619,7 @@ async function boot({ scene, camera, renderer }) {
   function reactToPlay(fell) {
     const now = performance.now();
     const state = store();
+    if(state.environment==="football")return;
     if (state.stayQuiet || !state.autoEmotions || state.menuOpen || document.hidden || inputLocked) return;
     if (!fell && (recovery || mode === "roll" || now < nextHappy || (state.mood === "Upset" && now < moodUntil))) return;
     setStore({ mood: fell ? "Upset" : "Delighted" });
@@ -646,7 +648,10 @@ async function boot({ scene, camera, renderer }) {
     const q=Array.from(data.qpos,v=>Number(v.toFixed(5)));
     const expression=loco==="rollers" && voiceFrame();
     if(expression) for(let j=5;j<=8;j++) q[qposAdr[j]]+=expression[j-5];
-    return [q,jawOpenNow(),ballActive && store().environment!=="race",currentVoice(),currentVariant];
+    const sportNeck=match && sportFX.neck(0);
+    if(sportNeck)for(let j=5;j<=8;j++)q[qposAdr[j]]+=sportNeck[j-5];
+    if(match?.breath)q[qposAdr[5]]+=.16*match.breath;
+    return [q,jawOpenNow(),ballActive && !isRace(store().environment),currentVoice(),currentVariant,match?[sportFX.snapshot(),match.breath,match.fireworks,sportFX.jaw(1),sportFX.neck(1)]:null];
   }
   async function finishRecording(){
     const clip=recording;
@@ -693,7 +698,7 @@ async function boot({ scene, camera, renderer }) {
     if (inputLocked || headMode || mode === "roll" || mode === "crouch" ||
         mode === "groundpick" || isKick() || postKickLock > 0 || recovery)
       return ZERO_CMD;
-    const target = match && (!store().manual || store().environment==="race") ? match.commands[0] : wander.active ? wander.command : controller.getCommand();
+    const target = match && (!store().manual || match.ownsWhite) ? match.commands[0] : wander.active ? wander.command : controller.getCommand();
     return loco === "rollers" ? skateCommand(target) : target;
   }
   let rollRun = null;
@@ -783,12 +788,18 @@ async function boot({ scene, camera, renderer }) {
     grab = null;
   }
 
+  function ballSize(){
+    const radius=store().environment==="football"?FOOTBALL_RADIUS:BALL_RADIUS;
+    model.geom_size[3*model.geom("ball_geom").id]=radius;
+    return radius;
+  }
   function resetSim() {
     // A live grab must not survive a reset: the per-step spring would
     // immediately yank the respawned duck toward the stale cursor target.
     endGrabHook();
     resetPostureState();
     mujoco.mj_resetDataKeyframe(model, data, standKeyId);
+    ballSize();
     data.mocap_pos[2] = store().winterRink ? .18 : -3;
     data.mocap_pos[5] = store().environment==="football" ? 0 : -3;
     mujoco.mj_forward(model, data);
@@ -872,7 +883,7 @@ async function boot({ scene, camera, renderer }) {
   function spawnBall(opts = {}) {
     if (inputLocked && !opts.fromQueue) return;
     if (!ball) return;
-    if(store().environment==="race")return;
+    if(isRace(store().environment))return;
     if (ball.visual !== "hidden") {
       ball.queueRespawn();
       ball.despawn({ parkPhysics: parkBallPhysics });
@@ -1142,7 +1153,7 @@ async function boot({ scene, camera, renderer }) {
 
   let friend = null, impactCooldown=0, skidLoad=null;
   async function controlStep() {
-    if (match && !inputLocked && !store().menuOpen) match.update(!!store().manual);
+    if (match && !inputLocked && !store().menuOpen) match.update(!!store().manual,controller.getCommand());
     if (wander.active) {
       wander.command.fill(0);
       if (!document.hidden && !store().menuOpen && !inputLocked && !recovery &&
@@ -1439,6 +1450,7 @@ async function boot({ scene, camera, renderer }) {
   // the R3F layer.
   const { ground: grid, sky, group: meadow } = makeMeadow(scene, topoH);
   const showField=sportsField(scene);
+  const sportFX=sportEffects(scene);
   let rink, skatingFriend;
   let rinkRevision = 0, previousLoco = "legs", rinkView;
   reliefGridMat = grid.material;
@@ -1446,7 +1458,7 @@ async function boot({ scene, camera, renderer }) {
   let rig = await rigPromise;
   scene.add(rig.placer);
   friend = meadowDuck(scene, rig, {
-    mujoco, ort, model, data, policy: officialWalk,pickPolicy:sessions.groundpick, standPolicy: sessions.stand,
+    mujoco, ort, model, data, groundHeight:(x,y)=>reliefScale*topoH(x,y), policy: officialWalk,pickPolicy:sessions.groundpick, standPolicy: sessions.stand,
     standKeyId, gyroAdr, trunkId, qposAdr, dofAdr, writeBodyObservation,
   });
   const meadowFriend = friend;
@@ -1512,7 +1524,7 @@ async function boot({ scene, camera, renderer }) {
     loco = name;
     friend.show(false);
     if (name === "rollers") {
-      skatingFriend ??= meadowDuck(scene,L.rig,{...L,mujoco,ort,policy:sessions.drive,
+      skatingFriend ??= meadowDuck(scene,L.rig,{...L,mujoco,ort,groundHeight:(x,y)=>reliefScale*topoH(x,y),policy:sessions.drive,
         skating:true,steadySkates,writeBodyObservation});
       friend=skatingFriend;
     } else friend=meadowFriend;
@@ -1587,7 +1599,7 @@ async function boot({ scene, camera, renderer }) {
       controller.setLocked(v);
       // A ball is always in play: pop one the moment the entrance or a
       // respawn ceremony hands control back.
-      if (!v && ball && !ballActive && store().environment!=="race") spawnBall({ fromQueue: true });
+      if (!v && ball && !ballActive && !isRace(store().environment)) spawnBall({ fromQueue: true });
     },
     flashReset: () => {},
     // Audio twins of the wireframe materialize FX (entrance and respawns):
@@ -1643,9 +1655,20 @@ async function boot({ scene, camera, renderer }) {
   // orbit target keeps easing to the trunk in syncRig. Implemented by
   // overwriting camera.position AFTER controls.update() so we never fight
   // OrbitControls' own spherical bookkeeping.
-  let chaseCam = true;
+  let chaseCam = true, cameraMode="Behind";
+  const cameraModes=["Behind","Front","Free","Top"];
+  function selectCamera(name){
+    cameraMode=name;chaseCam=name!=="Free";camResetT0=null;setStore({cameraMode:name});
+    if(name==="Front" || name==="Behind"){
+      const q=data.qpos;controls.target.set(q[0],q[2],-q[1]);
+      const yaw=duckYaw(q)+(name==="Front"?Math.PI:0);
+      camera.position.copy(controls.target).add(new THREE.Vector3(-Math.cos(yaw)*1.05,.41,Math.sin(yaw)*1.05));
+    }
+    controls.update();
+  }
+  function cycleCamera(){selectCamera(cameraModes[(cameraModes.indexOf(cameraMode)+1)%cameraModes.length]);}
   let scenarioView = null;
-  const CHASE_PITCH = 0.135; // rad above horizontal, keeps the floor in view
+  const CHASE_PITCH = 0.29; // rad above horizontal, keeps the floor in view
   const CHASE_EASE = 0.05;
   const _chasePos = new THREE.Vector3();
   const _chaseDir = new THREE.Vector3();
@@ -1664,8 +1687,14 @@ async function boot({ scene, camera, renderer }) {
   const CHASE_YAW_EASE = 0.10;
   const CHASE_YAW_EASE_TURN = 0.5;
   const wrapPi = (a) => Math.atan2(Math.sin(a), Math.cos(a));
-  function updateChaseCam() {
-    if (store().winterRink || match || replay) return;
+  function updateChaseCam(tracked=data.qpos) {
+    if(!chaseCam)return;
+    if(cameraMode==="Top"){
+      const p=tracked,wide=!!match;
+      _target.set(wide?0:p[0],0,wide?0:-p[1]);controls.target.lerp(_target,.15);
+      _target.copy(controls.target).add(_chaseDir.set(0,wide?7.6:2.6,.025));
+      camera.position.lerp(_target,.14);camera.lookAt(controls.target);return;
+    }
     // Reset glide: one clean tween from wherever the camera is back to the
     // home framing. Runs instead of the chase logic and hands control back
     // to it on landing.
@@ -1684,7 +1713,7 @@ async function boot({ scene, camera, renderer }) {
     // delta, and the duck isn't walking anyway (twist zeroed).
     if (headMode) return;
     if (!chaseCam) return;
-    const qpos = data.qpos;
+    const qpos = tracked;
     let rawYaw;
     if (mode === "roll" || isKick()) {
       rawYaw = chaseHeldYaw;
@@ -1707,7 +1736,7 @@ async function boot({ scene, camera, renderer }) {
       );
       if (!turning && Math.abs(yawErr) < CHASE_YAW_RELEASE) chaseYawTracking = false;
     }
-    const yaw = chaseYawFollow;
+    const yaw = chaseYawFollow+(cameraMode==="Front"?Math.PI:0);
     const dist = camera.position.distanceTo(controls.target);
     const horiz = dist * Math.cos(CHASE_PITCH);
     const vert = dist * Math.sin(CHASE_PITCH);
@@ -1727,7 +1756,7 @@ async function boot({ scene, camera, renderer }) {
     if (len > 1e-6) camera.position.copy(controls.target).addScaledVector(_chaseDir, dist / len);
     camera.lookAt(controls.target);
   }
-  renderer.domElement.addEventListener("pointerdown", () => { chaseCam = false; });
+  renderer.domElement.addEventListener("pointerdown", () => { if(!replay)selectCamera("Free"); });
 
   // Camera reset glide (owned by the respawn ceremony): back to the
   // page-load framing - the chase cam's ideal point behind the duck's
@@ -1754,7 +1783,7 @@ async function boot({ scene, camera, renderer }) {
     _camFrom.copy(camera.position);
     _tgtFrom.copy(controls.target);
     camResetT0 = performance.now();
-    chaseCam = true; // reset always re-attaches the chase cam
+    chaseCam = cameraMode!=="Free"; // retain the selected viewpoint
   }
 
   // ── Mouse grab, pointer side (pick + drag target + cursor) ────────────
@@ -1873,21 +1902,23 @@ async function boot({ scene, camera, renderer }) {
   // trunk group can take the freejoint pose in raw MJCF coordinates.
   const _target = new THREE.Vector3();
   const _follow = new THREE.Vector3();
-  function syncRig() {
+  function syncRig(replaySports=null) {
     const qpos = data.qpos;
     trunkGroup.position.set(qpos[0], qpos[1], qpos[2]);
     trunkGroup.quaternion.set(qpos[4], qpos[5], qpos[6], qpos[3]);
     const expression = !replay && loco === "rollers" ? voiceFrame() : null;
+    const sportNeck=!replay && match && sportFX.neck(0);
     for (let j = 0; j < NUM_JOINTS; j++) {
       // On skates, animate the four neck/head joints in the render rig.
       // Their expressive offsets would destabilize the drive policy.
       const offset = expression && j >= 5 && j <= 8 ? expression[j - 5] : 0;
-      setJoint(rig, JOINT_NAMES[j], qpos[qposAdr[j]] + offset);
+      setJoint(rig, JOINT_NAMES[j], qpos[qposAdr[j]] + offset + (sportNeck && j>=5 && j<=8 ? sportNeck[j-5] : 0) + (!replay && j===5 ? .16*(match?.breath||0) : 0));
     }
     // Passive hinges (roller wheels): purely visual, driven straight from qpos.
     for (const ej of extraJoints) setJoint(rig, ej.name, qpos[ej.adr]);
     // Ball: live follows qpos; ghost freeze is owned by the ball actor.
-    if (ball) ball.sync(qpos, ballQposAdr, ballActive && store().environment!=="race");
+    ballMesh.scale.setScalar(store().environment==="football"?FOOTBALL_RADIUS/BALL_RADIUS:1);
+    if (ball) ball.sync(qpos, ballQposAdr, ballActive && !isRace(store().environment));
     penguin.visible=!!store().winterRink && ballActive;
     if(penguin.visible){
       ballMesh.visible=false;
@@ -1897,7 +1928,7 @@ async function boot({ scene, camera, renderer }) {
     // camera by the same delta, so the camera-to-duck distance and viewing
     // angle stay constant while the duck walks. Paused while the reset
     // glide owns the camera.
-    if (!replay && camResetT0 === null && !store().winterRink && !match) {
+    if (!replay && chaseCam && cameraMode!=="Top" && camResetT0 === null) {
       _target.set(qpos[0], qpos[2], -qpos[1]);
       _follow.copy(_target).sub(controls.target);
       // Horizontal follow at the usual rate; vertical much slower so the
@@ -1908,9 +1939,14 @@ async function boot({ scene, camera, renderer }) {
       controls.target.add(_follow);
       camera.position.add(_follow);
     }
+    sportFX.names(qpos,friend.position);
     sky.position.copy(camera.position);
     shadow.position.set(qpos[0], .0009 + reliefScale * topoH(qpos[0], qpos[1]), -qpos[1]);
-    friend.draw(reliefScale * topoH(friend.position[0], friend.position[1]));
+    const surface=store().winterRink ? .001 : isRace(store().environment) ? .006 : 0;
+    const breath=replay?(replaySports?.[1]||0):(match?.breath||0);
+    const blueJaw=replay?(replaySports?.[3]||0):(match?sportFX.jaw(1):0);
+    friend.draw(reliefScale * topoH(friend.position[0], friend.position[1])+surface,breath,blueJaw,replay?replaySports?.[4]:match && sportFX.neck(1));
+    if(!replay) sportFX.fireworks(match?.fireworks);
 
   }
 
@@ -1963,7 +1999,7 @@ async function boot({ scene, camera, renderer }) {
     // Runtime mouth-mode rule (main.rs: motor_targets[MOUTH] += offset):
     // the policy's jaw is the BASE and the trigger/quack opening is an
     // additive offset on top, clamped - it never fights the pick motion.
-    return Math.min(1, pickJawNow() + Math.max(flap, padJaw, voiceFrame()?.[4] ?? 0));
+    return Math.min(1, pickJawNow() + Math.max(flap, padJaw, voiceFrame()?.[4] ?? 0,match?sportFX.jaw(0):0));
   }
   function syncJaw() {
     setJawOpen(rig, jawOpenNow());
@@ -2116,7 +2152,7 @@ async function boot({ scene, camera, renderer }) {
   const _padOff = new THREE.Vector3();
   function padOrbitStep(rx, ry, dt) {
     padOrbitLive = rx !== 0 || ry !== 0;
-    if (padOrbitLive) chaseCam = false; // detach, same as a mouse grab
+    if (padOrbitLive && cameraMode!=="Free") selectCamera("Free"); // detach, same as a mouse grab
     const k = 1 - Math.exp(-PAD_ORBIT_SMOOTH * dt);
     padOrbitVel.az += (rx * PAD_ORBIT_SPEED - padOrbitVel.az) * k;
     padOrbitVel.el += (-ry * PAD_ORBIT_SPEED * 0.75 - padOrbitVel.el) * k;
@@ -2142,23 +2178,24 @@ async function boot({ scene, camera, renderer }) {
     if(replay){
       replayTime+=dt;
       const index=Math.min(replay.frames.length-1,Math.floor(replayTime/CTRL_DT));
-      const [q,jaw,visible,sound,color]=replay.frames[index];
+      const [q,jaw,visible,sound,color,sports]=replay.frames[index];
       if(index!==replayIndex){
         data.qpos.set(q);ballActive=visible;
         if(color && replay.color!==color){applyVariant(rig,color);replay.color=color;}
-        syncRig();setJawOpen(rig,jaw);
+        sportFX.restore(sports?.[0]);sportFX.fireworks(sports?.[2]);
+        syncRig(sports);setJawOpen(rig,jaw);
         if(sound && (replaySound!==sound[0] || !currentVoice() && index<replay.frames.length-1)){
           playVoice(sound[0],undefined,false,sound[1]).catch(()=>{});
         } else if(!sound && replaySound) stopVoice();
         replaySound=sound?.[0];replayIndex=index;
-        if(index===replay.frames.length-1)stopVoice();
+        if(index===replay.frames.length-1){stopVoice();sportFX.stopVoices();}
       }
       if(followActor>=0){
         const p=followActor===0?q:friend.position;
         _target.set(p[0],p[2],-p[1]);_follow.copy(_target).sub(controls.target);
         controls.target.add(_follow);camera.position.add(_follow);
       }
-      rink?.update(dt);controls.update();return;
+      rink?.update(dt);controls.update();if(chaseCam)updateChaseCam(followActor===1?friend.position:data.qpos);return;
     }
 
     if (store().mood && performance.now() >= moodUntil) setStore({ mood: "" });
@@ -2231,7 +2268,7 @@ async function boot({ scene, camera, renderer }) {
   controller.on("reset", () => waypointSource.cancel());
   controller.on("spawnBall", () => spawnBall());
   controller.on("headToggle", () => toggleHeadMode());
-  controller.on("chaseToggle", () => { chaseCam = !chaseCam; });
+  controller.on("chaseToggle", cycleCamera);
   controller.on("locoToggle", () => toggleLoco());
   controller.on("roll", ({ source }) => triggerRoll(srcTag(source)));
   controller.on("groundPick", ({ source }) => triggerGroundPick(srcTag(source)));
@@ -2426,7 +2463,8 @@ async function boot({ scene, camera, renderer }) {
     if(!replay)return;
     event.stopImmediatePropagation();
     if(event.code==="Escape") gameApi.leaveReplay();
-    if(event.code==="Digit0") followActor=-1;
+    if(event.code==="KeyC" && !event.repeat){cycleCamera();if(cameraMode==="Free")followActor=-1;else if(followActor<0)followActor=0;}
+    if(event.code==="Digit0"){followActor=-1;selectCamera("Free");}
     if(event.code==="Digit1") followActor=0;
     if(event.code==="Digit2") followActor=1;
   },true);
@@ -2456,36 +2494,37 @@ async function boot({ scene, camera, renderer }) {
       while(ceremony.respawnActive){await new Promise(r=>setTimeout(r,50));}
       savedLive=[data.qpos.slice(),data.qvel.slice(),ballActive];
       stopVoice();endGrabHook();setInputLock(true);
-      followActor=-1;replayTime=0;replayIndex=-1;replaySound=null;replay=clip;frame(0);
+      selectCamera("Free");followActor=-1;replayTime=0;replayIndex=-1;replaySound=null;replay=clip;frame(0);
       setStore({watching:true,menuOpen:false,entered:true});
       setInputLock(true);
     },
     leaveReplay(){
       if(!replay)return;
-      replay=null;stopVoice();applyVariant(rig,currentVariant);data.qpos.set(savedLive[0]);data.qvel.set(savedLive[1]);ballActive=savedLive[2];
+      replay=null;sportFX.clear();stopVoice();applyVariant(rig,currentVariant);data.qpos.set(savedLive[0]);data.qvel.set(savedLive[1]);ballActive=savedLive[2];
       mujoco.mj_forward(model,data);setStore({watching:false,menuOpen:true});
     },
+    cycleCamera,
     async openEnvironment(kind) {
       await finishRecording();
-      match=null; gameApi.stopWander();
+      match=null; sportFX.clear();gameApi.stopWander();
       if(store().winterRink && kind!=="rink") await gameApi.setRink(false);
-      setStore({environment:kind,score:[0,0],times:[0,0],countdown:3,finished:[false,false]});
-      showField(kind);
+      setStore({environment:kind,score:[0,0],times:[0,0],countdown:3,finished:[false,false],metres:[0,0],laps:[0,0],winner:null,sportStatus:""});
+      ballSize();showField(kind);
       data.mocap_pos[5]=-3;
       if(kind==="rink") return gameApi.setRink(true);
-      if(kind==="football" || kind==="race"){
+      if(kind==="football" || isRace(kind)){
         await ensureRollers();
         if(loco!=="rollers") activateLoco("rollers");
         data.mocap_pos[5]=kind==="football"?0:-3;
         setStore({locoWant:"rollers",recoverInPlace:true,stayQuiet:false});
-        if(kind==="race")ball.despawn({cancelQueued:true,parkPhysics:parkBallPhysics});
+        if(isRace(kind))ball.despawn({cancelQueued:true,parkPhysics:parkBallPhysics});
         else if(!ballActive) spawnBall({fromQueue:true});
-        chaseCam=false;camResetT0=null;
+        selectCamera("Top");
         controls.target.set(0,0,0);camera.position.set(.05,4.3,4.2);controls.update();
-        match=createMatch(kind,data,model,ballQposAdr,ballDofAdr,setStore);
+        match=createMatch(kind,data,model,ballQposAdr,ballDofAdr,setStore,sportFX.cue);
       } else {
         if(loco!=="legs"){activateLoco("legs");setStore({locoWant:"legs"});}
-        gameApi.startWander();
+        selectCamera("Behind");gameApi.startWander();
       }
     },
     async setRink(enabled) {
@@ -2515,8 +2554,7 @@ async function boot({ scene, camera, renderer }) {
         scene.fog.color.set(0xcadbe6);
         sky.visible=false;
         scene.background.set(0xb3cfdf);
-        chaseCam=false;
-        camResetT0=null;
+        selectCamera("Free");
         controls.target.set(0,.31,0);
         camera.position.set(-1.64,1.02,1.60);
         controls.update();
@@ -2639,6 +2677,7 @@ async function boot({ scene, camera, renderer }) {
     get chaseCam() { return chaseCam; },
     set chaseCam(v) { chaseCam = !!v; },
     get props() { return propGroups; },
+    get companionClearance(){return friend.clearance;},
     get companionPosition() { return Array.from(friend.position.slice(0, 3)); },
     get relief() { return reliefOn; },
     setRelief: (v) => { reliefOn = !!v; },

@@ -624,7 +624,7 @@ export function EnvironmentMenu() {
     onChange={async e=>{setBusy(true);setError("");try{await gameApi.openEnvironment(e.target.value);}
       catch(e){setError(e.message);}finally{setBusy(false);}}}>
     <option value="free">Meadow</option><option value="rink">Winter rink</option>
-    <option value="football">Roller football</option><option value="race">Roller sprint</option>
+    <option value="football">Roller football</option><option value="race">Straight sprint</option><option value="circuit">Circuit skate</option>
   </select>{error && <span role="alert">{error}</span>}</label>;
 }
 export function PlaybackMenu(){
@@ -635,19 +635,24 @@ export function PlaybackMenu(){
     <option value="demo">Winter rink · demo</option>
     {ids.map(k=><option key={k} value={k}>{new Date(k).toLocaleString()}</option>)}</select></label>
     <button onClick={()=>gameApi.watchClip(id).catch(e=>fail(e.message))}>Watch replay</button>
-    <small style={{display:"block"}}>Camera: drag to orbit · 1 / 2 follow · 0 free</small>{error}</div>;
+    <small style={{display:"block"}}>Camera · C change view · drag to orbit · 1 / 2 follow · 0 free</small>{error}</div>;
 }
 
 function SportsHud(){
   const environment=useGame(s=>s.environment),score=useGame(s=>s.score),manual=useGame(s=>s.manual);
   const countdown=useGame(s=>s.countdown),times=useGame(s=>s.times),finished=useGame(s=>s.finished);
+  const status=useGame(s=>s.sportStatus),winner=useGame(s=>s.winner);
+  const laps=useGame(s=>s.laps),metres=useGame(s=>s.metres);
+  const football=environment==="football",circuit=environment==="circuit";
   return <Box sx={{position:"fixed",top:"1rem",left:"50%",transform:"translateX(-50%)",zIndex:12}}>
-    <HudPlate caption={environment==="football"?"Roller football":"Sprint · out and back"}>
-    {environment==="football"?<>
-      <strong>MicroDuck {score[0]} — {score[1]} Blue</strong>
-      <label><input type="checkbox" checked={!!manual} onChange={e=>useGame.setState({manual:e.target.checked})}/> Play as MicroDuck</label>
-    </>:<><strong>{countdown || "GO"}</strong> {times.map((t,i)=><span key={i}>{i?"Blue":"MicroDuck"} {t.toFixed(2)} s {finished[i]?"✓":""} </span>)}
-      <button onClick={()=>gameApi.openEnvironment("race")}>Race again</button></>}
+    <HudPlate caption={football?"Football · first to 3":circuit?"Circuit skate":"Straight sprint"}>
+    {football?<><strong>White {score[0]} — {score[1]} Blue</strong>
+      <label><input type="checkbox" checked={!!manual} onChange={e=>useGame.setState({manual:e.target.checked})}/> Play as White</label>
+      {winner && <button onClick={()=>gameApi.openEnvironment("football")}>New match</button>}
+    </>:<><strong>{countdown || "GO"}</strong>{times.map((t,i)=><span key={i}>{i?"Blue":"White"} {circuit?
+      `${laps[i]} laps · ${metres[i].toFixed(1)} m`:`${t.toFixed(2)} s ${finished[i]?"✓":""}`}</span>)}
+      <button onClick={()=>gameApi.openEnvironment(environment)}>Race again</button></>}
+    {status && <strong role="status">{status}</strong>}
     </HudPlate></Box>;
 }
 
@@ -665,14 +670,15 @@ export default function Hud() {
   const touchMode = useGame((s) => s.touchMode);
   const watching=useGame(s=>s.watching),recording=useGame(s=>s.recording);
   const [saveError,setSaveError]=useState("");
-  const sport=useGame(s=>["race","football"].includes(s.environment));
+  const cameraMode=useGame(s=>s.cameraMode||"Behind");
+  const sport=useGame(s=>["race","football","circuit"].includes(s.environment));
   if(watching)return <button style={{position:"fixed",left:20,top:20,zIndex:40}} onClick={()=>gameApi.leaveReplay()}>← Back</button>;
   if (!entered || menuOpen) return null;
   return (
     <>
-      <RandomExpressions enabled={random && !quiet} />
+      <RandomExpressions enabled={random && !quiet && !sport} />
       <BackButton />
-      <Box sx={{position:"fixed",left:"1.5rem",top:"5rem",zIndex:11}}><HudPlate caption="Scene"><EnvironmentMenu /><button onClick={()=>recording?gameApi.finishRecording().catch(e=>setSaveError(e.message)):gameApi.startRecording()}>{recording?"Save recording":"Record"}</button>{saveError}</HudPlate></Box>
+      <Box sx={{position:"fixed",left:"1.5rem",top:"5rem",zIndex:11}}><HudPlate caption="Scene"><EnvironmentMenu /><button title="Cycle camera (C)" onClick={()=>gameApi.cycleCamera()}>Camera · {cameraMode} (C)</button><button onClick={()=>recording?gameApi.finishRecording().catch(e=>setSaveError(e.message)):gameApi.startRecording()}>{recording?"Save recording":"Record"}</button>{saveError}</HudPlate></Box>
       {sport ? <SportsHud/> : (
       <Box sx={{ position: "fixed", top: "1.25rem", left: "50%", transform: "translateX(-50%)", zIndex: 11 }}>
         <HudPlate caption={mood || activity || "Free play"}>

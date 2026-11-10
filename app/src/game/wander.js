@@ -86,13 +86,14 @@ export function createWander({
       }
       if (remaining <= 0) {
         const chase = island ? "Chasing toy" : "Chasing ball";
-        const options = ["Walking", "Running", chase, "Looking around"];
+        const options = ["Walking", "Running", "Looking around"];
         if (!rollers && jump) options.push("Jumping");
         if (!rollers && roll) options.push("Rolling");
         const pool = options.filter((s) => s !== activity);
-        activity = activity
-          ? pool[Math.floor(Math.random() * pool.length)]
-          : "Walking";
+        activity =
+          !activity || activity !== chase || Math.random() < 0.52
+            ? chase
+            : pool[Math.floor(Math.random() * pool.length)];
         remaining = between(
           ["Walking", "Running", chase].includes(activity) ? 15 : 5,
           60,

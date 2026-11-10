@@ -24,7 +24,7 @@ policies are lazy-loaded on the first switch.
 
 This version continues the Git history of the [Pollen Robotics simulator on Hugging Face](https://huggingface.co/spaces/pollen-robotics/microduck-simulator). The meshes, voices and policies used by the application are included in the checkout.
 
-Run `npm ci` and `npm run dev` inside `app`. Choose a meadow, winter rink, roller football or sprint from **Environment**. Both articulated robots, the play object, terrain and goal frames share one MuJoCo world. **Play as MicroDuck** switches between two computer players and keyboard control during a football match. The out-and-back sprint starts after a three-second countdown. Each duck turns at the far line and finishes in its starting lane.
+Run `npm ci` and `npm run dev` inside `app`. In roller football White and Blue play to three goals. Both skate back to their starting marks after a goal. **Play as White** switches control during play. Select **Straight sprint** for one timed run or **Circuit skate** for continuous laps, distance counters and breathing breaks. The promenade and winter rink share the same physics world. Wander starts by playing with the ball or penguin and returns to it between other activities.
 
 **Record** captures joint poses for both ducks, the play object and voice cues at 50 Hz. **Save recording** keeps the replay in this browser. Open the title menu to watch a saved recording or the included rink demo. Drag to orbit, press 1 or 2 to follow a duck and 0 for free camera. Escape returns to the menu.
 
@@ -53,7 +53,7 @@ and [pollen-robotics/microduck_rl](https://github.com/pollen-robotics/microduck_
 - F: alternate left / right kicks (legs only)
 - R: sit / stand (legs) / crouch-glide (rollers)
 - G: ground pick (legs only)
-- C: toggle the chase camera (on by default; dragging detaches it)
+- C: cycle through behind, front, free orbit and overhead cameras
 - Space: reset
 - Drag to orbit, scroll to zoom
 - Colour dots: repaint the duck (it quacks)
@@ -80,7 +80,7 @@ Plug in a controller and the same mapping as the real robot runtime applies:
 
 - Left stick: forward / back + turn
 - Right stick: orbit the camera (detaches the chase cam)
-- R3 (right stick click): toggle the chase cam back on
+- R3 (right stick click): cycle the camera view
 - X or D-pad down: sit / stand (legs) / crouch-glide (rollers)
 - A: ground pick (legs only)
 - Y: toggle head control

@@ -16,24 +16,28 @@ export function stopAutomaticVoice() {
   if (automatic) stopVoice();
 }
 
+export function fadeOut(previous) {
+  if (previous.paused || previous.ended) {
+    previous.pause();
+  } else {
+    const start = performance.now();
+    const volume = previous.volume;
+    const fade = setInterval(() => {
+      const remaining = Math.max(0, 1 - (performance.now() - start) / 24);
+      previous.volume = volume * remaining;
+      if (remaining === 0) {
+        clearInterval(fade);
+        previous.pause();
+      }
+    }, 4);
+  }
+}
+
 export function stopVoice() {
   if (player) {
     const previous = player;
     previous.onended = null;
-    if (previous.paused || previous.ended) {
-      previous.pause();
-    } else {
-      const start = performance.now();
-      const volume = previous.volume;
-      const fade = setInterval(() => {
-        const remaining = Math.max(0, 1 - (performance.now() - start) / 24);
-        previous.volume = volume * remaining;
-        if (remaining === 0) {
-          clearInterval(fade);
-          previous.pause();
-        }
-      }, 4);
-    }
+    fadeOut(previous);
     player = null;
     automatic = false;
   }

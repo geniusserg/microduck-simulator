@@ -1,6 +1,6 @@
 import { createWander } from "./wander.js";
 import * as THREE from "three";
-import { cloneRig, setJoint } from "./duck.js";
+import { cloneRig, setJoint, setJawOpen } from "./duck.js";
 import { applyVariant } from "./variants.js";
 import {
   DEFAULT_POSE,
@@ -310,7 +310,7 @@ export function meadowDuck(scene, source, physics) {
   );
   const rig = cloneRig(source);
   applyVariant(rig, "blue");
-  rig.placer.name = "Blue MicroDuck";
+  rig.placer.name = "Blue";
   scene.add(rig.placer);
   const trunk = rig.bodies.get("trunk_base");
   const shadow = contactShadow(scene);
@@ -347,6 +347,7 @@ export function meadowDuck(scene, source, physics) {
     data.qvel.fill(0, dof);
     data.qpos[pos] = x;
     data.qpos[pos + 1] = y;
+    data.qpos[pos + 2] += physics.groundHeight(x, y);
     data.ctrl.set(DEFAULT_POSE, JOINT_NAMES.length);
     mujoco.mj_forward(model, data);
     last.fill(0);
@@ -356,6 +357,12 @@ export function meadowDuck(scene, source, physics) {
 
   async function step(playerX, playerY, sportsCommand, ball) {
     sportsActive = !!sportsCommand;
+    const x = data.qpos[pos],
+      y = data.qpos[pos + 1];
+    if (data.qpos[pos + 2] < physics.groundHeight(x, y) - 0.015) {
+      reset(x, y);
+      return;
+    }
     writeBodyObservation(obs, data, gyroAdr, trunkId, qposAdr, dofAdr, last);
     obs.fill(0, command);
     fallen = obs[5] > -0.5 ? fallen + CTRL_DT : 0;
@@ -413,12 +420,56 @@ export function meadowDuck(scene, source, physics) {
         DEFAULT_POSE[j] + ACTION_SCALE * last[j];
   }
 
-  function draw(groundHeight) {
+  // Compare the rendered soles to the visible surface. The roller tire and
+  // the leg sole meshes extend beyond the simplified contact geometry.
+  const soles = [],
+    shells = [];
+  rig.root.traverse((o) => {
+    if (
+      o.isMesh &&
+      /^(sole_left|sole_right|tire)\.stl$/.test(o.userData.meshName)
+    ) {
+      soles.push(o);
+    } else if (
+      o.isMesh &&
+      /^(np_f970|right_shell|left_shell|bottom_head_shell|top_head_shell)\.stl$/.test(
+        o.userData.meshName,
+      )
+    )
+      shells.push(o);
+  });
+  let clearance = 0;
+  function draw(groundHeight, breath = 0, jaw = 0, neck = null) {
     const q = data.qpos.subarray(pos);
     trunk.position.set(q[0], q[1], q[2]);
     trunk.quaternion.set(q[4], q[5], q[6], q[3]);
     for (let j = 0; j < JOINT_NAMES.length; j++)
-      setJoint(rig, JOINT_NAMES[j], data.qpos[qposAdr[j]]);
+      setJoint(
+        rig,
+        JOINT_NAMES[j],
+        data.qpos[qposAdr[j]] +
+          (neck && j >= 5 && j <= 8 ? neck[j - 5] : 0) +
+          (j === 5 ? 0.16 * breath : 0),
+      );
+    setJawOpen(rig, jaw);
+    rig.placer.position.y = 0;
+    rig.placer.updateWorldMatrix(true, true);
+    let low = Infinity;
+    const supports =
+      1 - 2 * (q[4] ** 2 + q[5] ** 2) < 0.75 ? soles.concat(shells) : soles;
+    for (const sole of supports) {
+      const a = sole.geometry.attributes.position,
+        m = sole.matrixWorld.elements;
+      for (let k = 0; k < a.count; k++)
+        low = Math.min(
+          low,
+          m[1] * a.getX(k) + m[5] * a.getY(k) + m[9] * a.getZ(k) + m[13],
+        );
+    }
+    if (Number.isFinite(low)) {
+      rig.placer.position.y = Math.max(0, groundHeight - low);
+      clearance = low + rig.placer.position.y - groundHeight;
+    }
     shadow.position.set(q[0], groundHeight + 0.0009, -q[1]);
   }
   draw(0);
@@ -427,6 +478,9 @@ export function meadowDuck(scene, source, physics) {
     draw,
     rig,
     reset,
+    get clearance() {
+      return clearance;
+    },
     addresses: {
       pos,
       dof,
