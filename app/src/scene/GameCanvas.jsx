@@ -10,14 +10,14 @@ import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 import { bootGame } from "../game/game.js";
 import { gameApi } from "../store.js";
 import { SPAWN_X, SPAWN_Y } from "../game/constants.js";
-import CrtDistortion, { CRT_DISTORTION_ENABLED } from "./CrtDistortion.jsx";
+
 
 function Game() {
   const { scene, camera, gl } = useThree();
 
   useEffect(() => {
-    scene.background = new THREE.Color(0x08080c);
-    gl.setClearColor(0x08080c, 1);
+    scene.background = new THREE.Color(0xbcdcec);
+    gl.setClearColor(0xbcdcec, 1);
     const pmrem = new THREE.PMREMGenerator(gl);
     scene.environment = pmrem.fromScene(new RoomEnvironment()).texture;
     scene.environmentIntensity = 0.45;
@@ -31,7 +31,7 @@ function Game() {
 
   return (
     <>
-      <ambientLight intensity={0.6} />
+      <hemisphereLight args={[0xe7f4ff, 0x91a35c, 1.05]} />
       <directionalLight position={[2, 4, 2]} intensity={1.6} />
       <directionalLight position={[-2, 2, 1.5]} intensity={0.4} />
       <directionalLight color={0xffb366} position={[0, 3, -2]} intensity={0.7} />
@@ -55,7 +55,7 @@ export default function GameCanvas() {
       }}
     >
       <Game />
-      {CRT_DISTORTION_ENABLED && <CrtDistortion />}
+
     </Canvas>
   );
 }

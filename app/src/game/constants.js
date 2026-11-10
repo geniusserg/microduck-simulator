@@ -69,7 +69,7 @@ export const BALL_PARK_POS = "50 0 0.05";
 
 // Square arena boxing the play area: static walls at +-ARENA_HALF keep
 // the ball (and the duck) inside. Tall enough that neither steps over.
-export const ARENA_HALF = 1.5; // inner half-size, m
+export const ARENA_HALF = 3; // inner half-size, m
 export const ARENA_WALL_H = 0.25;
 export const ARENA_WALL_T = 0.05;
 // Section grid: 5 cells across the 3 m arena (ODD, so a true middle

@@ -5,7 +5,6 @@
 // spinner), so no separate preboot veil.
 import { useEffect } from "react";
 import GameCanvas from "./scene/GameCanvas.jsx";
-import { Halftone, CrtOverlay } from "./ui/Overlays.jsx";
 import Hud from "./ui/Hud.jsx";
 import TouchOverlay from "./ui/TouchOverlay.jsx";
 import BiosOverlay from "./ui/BiosOverlay.jsx";
@@ -78,8 +77,6 @@ export default function App() {
   return (
     <>
       <GameCanvas />
-      <Halftone />
-      <CrtOverlay />
       <Hud />
       <TouchOverlay />
       <BiosOverlay />

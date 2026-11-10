@@ -23,6 +23,12 @@ export const useGame = create(
     bootFailed: false,
 
     // Game state mirrored for the UI
+    wanderActivity: "",
+    stayQuiet: false,
+    recoverInPlace: true,
+    autoEmotions: true,
+    mood: "",
+    stopCount: 0,
     modeLabel: "Run",
     loco: "legs", // "legs" | "rollers" - what the game is actually running
     locoWant: "legs", // what the quickbar asked for (game reconciles)

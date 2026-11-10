@@ -1,9 +1,4 @@
-// In-game HUD: Back (top-left), pre-order button (top-right, label flips
-// to "Pre-order pack" while rollers are selected - the rollers ship in the
-// accessory pack), quickbar (bottom-left: colour palette + loco switch),
-// telemetry stack (bottom-right) and the LOADING ROLLERS line while the
-// roller stack streams in.
-//
+import {clipIds} from "../game/recordings.js";
 // Chrome reads as small comic PANELS: each group sits in a thick cream
 // keyline frame on a dark glass plate (1px ink inset between glass and
 // frame), with a caption box (cartouche) overlapping the frame's corner -
@@ -20,42 +15,9 @@ import { keyframes } from "@mui/material/styles";
 import { useGame, gameApi } from "../store.js";
 import { VARIANT_LABELS, VARIANT_SWATCH_HEX } from "../game/variants.js";
 import { uiClick, isMuted, setMuted } from "../game/audio.js";
+import { stopVoice, playVoice, stopAutomaticVoice, voiceBusy } from "../game/voice.js";
 import { ORANGE, MONO } from "../theme.js";
 import { ANTON, COMIC_INK, CREAM } from "./comic.jsx";
-
-// Matrix-style letter scramble: on change every glyph flips through random
-// charset entries, then locks to its target left-to-right over ~0.45 s.
-// Monospace keeps the width stable mid-scramble.
-const SCRAMBLE_GLYPHS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789#$%&*<>/=+";
-function useScramble(target) {
-  const [text, setText] = useState(target.toUpperCase());
-  const timer = useRef(null);
-  const shown = useRef(target.toUpperCase());
-  useEffect(() => {
-    const t = target.toUpperCase();
-    if (shown.current === t) return;
-    shown.current = t;
-    if (timer.current) clearInterval(timer.current);
-    const n = t.length;
-    const DUR = 450; // ms until the last letter locks
-    const rnd = () => SCRAMBLE_GLYPHS[(Math.random() * SCRAMBLE_GLYPHS.length) | 0];
-    const t0 = performance.now();
-    timer.current = setInterval(() => {
-      const k = Math.floor(((performance.now() - t0) / DUR) * n);
-      if (k >= n) {
-        clearInterval(timer.current);
-        timer.current = null;
-        setText(t);
-        return;
-      }
-      let out = t.slice(0, k);
-      for (let i = k; i < n; i++) out += rnd();
-      setText(out);
-    }, 40);
-    return () => timer.current && clearInterval(timer.current);
-  }, [target]);
-  return text;
-}
 
 const recBlink = keyframes`
   0%, 58% { opacity: 1; }
@@ -260,42 +222,82 @@ function BackButton() {
   );
 }
 
-export const SHOP_URL = "https://store.pollen-robotics.com/collections/microduck";
+const emotions = ["curious", "excited", "laugh", "angry", "sad", "devastated", "defiant",
+  "impatient", "mmh", "mock", "yes", "yes_fast", "no"];
+const songs = ["jingle_bells", "duck_strut", "wistful"];
 
-// Exported: the title/pause overlay renders the same plate in the same
-// spot, so the pause fade reads as the button staying put, not two
-// different buttons swapping.
-export function PreorderButton({ sx }) {
-  const locoWant = useGame((s) => s.locoWant);
-  const text = useScramble(locoWant === "rollers" ? "Pre-order pack" : "Pre-order");
+function RandomExpressions({ enabled }) {
+  const last = useRef(null);
+  useEffect(() => {
+    if (!enabled) return;
+    let timer;
+    function schedule() {
+      clearTimeout(timer);
+      if (!document.hidden) {
+        timer = setTimeout(tick, 12000 + Math.random() * 13000);
+      }
+    }
+    function tick() {
+      if (!document.hidden && gameApi.canExpress?.() && !voiceBusy()) {
+        const pool = emotions.filter(name => name !== last.current);
+        const name = pool[Math.floor(Math.random() * pool.length)];
+        last.current = name;
+        playVoice(name, undefined, true).catch(() => {});
+      }
+      schedule();
+    }
+    function visibilityChanged() {
+      if (document.hidden) stopAutomaticVoice();
+      schedule();
+    }
+    schedule();
+    document.addEventListener("visibilitychange", visibilityChanged);
+    return () => {
+      clearTimeout(timer);
+      stopAutomaticVoice();
+      document.removeEventListener("visibilitychange", visibilityChanged);
+    };
+  }, [enabled]);
+  return null;
+}
+
+function VoicePanel({ random, toggleRandom }) {
+  const [selected, select] = useState("curious");
+  const [playing, setPlaying] = useState(false);
+  const [error, setError] = useState("");
+  useEffect(() => stopVoice, []);
+  useEffect(() => useGame.subscribe(s => s.stopCount, () => setPlaying(false)), []);
+  const stop = () => { stopVoice(); setPlaying(false); };
+  async function play() {
+    setError("");
+    setPlaying(true);
+    try { await playVoice(selected, () => setPlaying(false)); }
+    catch { setPlaying(false); setError("Audio could not play. Try again."); }
+  }
   return (
-    <HudPlate
-      caption="Shop"
-      captionSide="right"
-      captionFill="orange"
-      sx={{ position: "fixed", top: "1.25rem", right: "1.5rem", zIndex: 10, ...sx }}
-    >
-      <Box
-        component="a"
-        href={SHOP_URL}
-        target="_blank"
-        rel="noopener noreferrer"
-        onClick={() => uiClick()}
-        sx={{
-          ...hudHitSx,
-          background: ORANGE,
-          color: COMIC_INK,
-          "&:hover": { filter: "brightness(1.07)" },
-          "&:active": { filter: "brightness(0.92)" },
-        }}
-      >
-        {text}
+    <HudPlate caption="Voice">
+      <select aria-label="Emotion or song" value={selected}
+        onChange={(e) => { stop(); select(e.target.value); setError(""); }}
+        onKeyDown={(e) => e.stopPropagation()}>
+        {[["Emotions", emotions], ["Songs", songs]].map(([label, names]) =>
+          <optgroup key={label} label={label}>{names.map(name =>
+            <option key={name} value={name}>{name.replaceAll("_", " ").replace(/^./, c => c.toUpperCase())}</option>
+          )}</optgroup>)}
+      </select>
+      <Box component="button" type="button" sx={{ ...hudHitSx, px: 1, color: CREAM }}
+        onKeyDown={(e) => e.stopPropagation()} onClick={playing ? stop : play}>
+        {playing ? "Stop" : "Play"}
       </Box>
+      <Box component="label" sx={{ display: "inline-flex", alignItems: "center", color: CREAM, px: 1, cursor: "pointer" }}>
+        <input type="checkbox" checked={random} onChange={toggleRandom} aria-label="Random emotions"
+          onKeyDown={e => e.stopPropagation()} /> Auto
+      </Box>
+      {error && <span role="alert">{error}</span>}
     </HudPlate>
   );
 }
 
-function Quickbar() {
+function Quickbar({ random, toggleRandom }) {
   const variant = useGame((s) => s.variant);
   const locoWant = useGame((s) => s.locoWant);
   return (
@@ -403,6 +405,7 @@ function Quickbar() {
           })}
         </Box>
       </HudPlate>
+      <VoicePanel random={random} toggleRandom={toggleRandom} />
       <PolicyChip />
       {/* Sound is fully disabled for now (SOUND_DISABLED in audio.js) -
           the mute toggle comes back with the finished sound design. */}
@@ -613,18 +616,81 @@ function PolicyToast() {
   );
 }
 
+export function EnvironmentMenu() {
+  const current=useGame(s=>s.environment || "free");
+  const [busy,setBusy]=useState(false);
+  const [error,setError]=useState("");
+  return <label>Environment <select aria-label="Environment" value={current} disabled={busy}
+    onChange={async e=>{setBusy(true);setError("");try{await gameApi.openEnvironment(e.target.value);}
+      catch(e){setError(e.message);}finally{setBusy(false);}}}>
+    <option value="free">Meadow</option><option value="rink">Winter rink</option>
+    <option value="football">Roller football</option><option value="race">Roller sprint</option>
+  </select>{error && <span role="alert">{error}</span>}</label>;
+}
+export function PlaybackMenu(){
+  const [ids,setIds]=useState([]),[id,select]=useState("demo"),[error,fail]=useState("");
+  const last=useGame(s=>s.lastClip);
+  useEffect(()=>{clipIds().then(setIds).catch(e=>fail(e.message));},[last]);
+  return <div><label>Recording <select value={id} onChange={e=>select(e.target.value)}>
+    <option value="demo">Winter rink · demo</option>
+    {ids.map(k=><option key={k} value={k}>{new Date(k).toLocaleString()}</option>)}</select></label>
+    <button onClick={()=>gameApi.watchClip(id).catch(e=>fail(e.message))}>Watch replay</button>
+    <small style={{display:"block"}}>Camera: drag to orbit · 1 / 2 follow · 0 free</small>{error}</div>;
+}
+
+function SportsHud(){
+  const environment=useGame(s=>s.environment),score=useGame(s=>s.score),manual=useGame(s=>s.manual);
+  const countdown=useGame(s=>s.countdown),times=useGame(s=>s.times),finished=useGame(s=>s.finished);
+  return <Box sx={{position:"fixed",top:"1rem",left:"50%",transform:"translateX(-50%)",zIndex:12}}>
+    <HudPlate caption={environment==="football"?"Roller football":"Roller sprint"}>
+    {environment==="football"?<>
+      <strong>MicroDuck {score[0]} — {score[1]} Blue</strong>
+      <label><input type="checkbox" checked={!!manual} onChange={e=>useGame.setState({manual:e.target.checked})}/> Play as MicroDuck</label>
+    </>:<><strong>{countdown || "GO"}</strong> {times.map((t,i)=><span key={i}>{i?"Blue":"MicroDuck"} {t.toFixed(2)} s {finished[i]?"✓":""} </span>)}
+      <button onClick={()=>gameApi.openEnvironment("race")}>Race again</button></>}
+    </HudPlate></Box>;
+}
+
 export default function Hud() {
+  const random = useGame(s => s.autoEmotions);
+  const mood = useGame(s => s.mood);
+  const recover = useGame(s => s.recoverInPlace);
+  const quiet = useGame(s => !!s.stayQuiet);
+  const activity = useGame(s => s.wanderActivity);
+  const toggleRandom = () => {
+    useGame.setState({ autoEmotions: !(random && !quiet), stayQuiet: false });
+  };
   const entered = useGame((s) => s.entered);
   const menuOpen = useGame((s) => s.menuOpen);
   const touchMode = useGame((s) => s.touchMode);
+  const watching=useGame(s=>s.watching),recording=useGame(s=>s.recording);
+  const [saveError,setSaveError]=useState("");
+  const sport=useGame(s=>["race","football"].includes(s.environment));
+  if(watching)return <button style={{position:"fixed",left:20,top:20,zIndex:40}} onClick={()=>gameApi.leaveReplay()}>← Back</button>;
   if (!entered || menuOpen) return null;
   return (
     <>
+      <RandomExpressions enabled={random && !quiet} />
       <BackButton />
-      <PreorderButton />
+      <Box sx={{position:"fixed",left:"1.5rem",top:"5rem",zIndex:11}}><HudPlate caption="Scene"><EnvironmentMenu /><button onClick={()=>recording?gameApi.finishRecording().catch(e=>setSaveError(e.message)):gameApi.startRecording()}>{recording?"Save recording":"Record"}</button>{saveError}</HudPlate></Box>
+      {sport ? <SportsHud/> : (
+      <Box sx={{ position: "fixed", top: "1.25rem", left: "50%", transform: "translateX(-50%)", zIndex: 11 }}>
+        <HudPlate caption={mood || activity || "Free play"}>
+          <Box component="button" type="button" aria-pressed={!!activity}
+            onClick={() => gameApi.startWander?.()} sx={{ ...hudHitSx, px: 1, color: activity ? ORANGE : CREAM }}>Wander</Box>
+          <Box component="button" type="button" aria-label="Stop wandering and stay"
+            onClick={() => gameApi.stopWander?.()} sx={{ ...hudHitSx, px: 1, color: quiet ? ORANGE : CREAM }}>Stop</Box>
+          <Box component="label" title="Stand up where the duck falls and continue playing"
+            sx={{ display: "inline-flex", alignItems: "center", color: CREAM, px: 1, cursor: "pointer" }}>
+            <input type="checkbox" checked={recover} onKeyDown={e => e.stopPropagation()}
+              onChange={e => useGame.setState({ recoverInPlace: e.target.checked })} /> Get up
+          </Box>
+        </HudPlate>
+      </Box>
+      )}
       {!touchMode && (
         <>
-          <Quickbar />
+          <Quickbar random={random && !quiet} toggleRandom={toggleRandom} />
           <Telemetry />
           <OsdLoad />
           <PolicyToast />

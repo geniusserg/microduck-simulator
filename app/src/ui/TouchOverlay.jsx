@@ -15,7 +15,8 @@ export default function TouchOverlay() {
   const touchMode = useGame((s) => s.touchMode);
   const entered = useGame((s) => s.entered);
   const menuOpen = useGame((s) => s.menuOpen);
-  const visible = touchMode && entered && !menuOpen;
+  const watching=useGame(s=>s.watching);
+  const visible = !watching && touchMode && entered && !menuOpen;
 
   return (
     <Box

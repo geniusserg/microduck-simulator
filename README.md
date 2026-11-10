@@ -20,6 +20,16 @@ the default) and **rollers** (the wheeled skating variant). Press `M` (or
 hold D-pad up ~1 s on a gamepad) to switch; the roller model, meshes and
 policies are lazy-loaded on the first switch.
 
+## Two-duck playground
+
+This version continues the Git history of the [Pollen Robotics simulator on Hugging Face](https://huggingface.co/spaces/pollen-robotics/microduck-simulator). The meshes, voices and policies used by the application are included in the checkout.
+
+Run `npm ci` and `npm run dev` inside `app`. Choose a meadow, winter rink, roller football or sprint from **Environment**. Both articulated robots, the play object, terrain and goal frames share one MuJoCo world. **Play as MicroDuck** switches between two computer players and keyboard control during a football match. The sprint starts after a three-second countdown.
+
+**Record** captures joint poses for both ducks, the play object and voice cues at 50 Hz. **Save recording** keeps the replay in this browser. Open the title menu to watch a saved recording or the included rink demo. Drag to orbit, press 1 or 2 to follow a duck and 0 for free camera. Escape returns to the menu.
+
+The wander controller selects walking, running and play for 15–60 seconds. Shorter activities use a 5–60 second window. A nearby duck can interrupt an activity for a greeting. A separate timer triggers grass pecks on foot. Steering runs between activity changes and routes around the central tree and arena edges.
+
 ## Policies
 
 | Mode | Checkpoint | What it does |
@@ -61,7 +71,7 @@ hints fade out; play the ball by driving into it.
 
 The ball's physics are local to your tab, but its pose is broadcast with
 your duck's, so other visitors see a translucent copy of your ball next
-to your ghost (and you see theirs). A square arena (3 x 3 m) fences the
+to your ghost (and you see theirs). A square arena (6 x 6 m) fences the
 play area so neither the ball nor the duck can wander off.
 
 ### Gamepad
