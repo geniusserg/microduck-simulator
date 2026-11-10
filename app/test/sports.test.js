@@ -37,6 +37,9 @@ test("both skaters return before kickoff, even with the manual switch on", () =>
     assert.equal(match.ownsWhite, true);
     for (let j = 0; j < 120; j++) match.update(true);
     assert.equal(match.ownsWhite, true);
+    assert.ok(data.qpos[14] > ARENA_HALF - 0.34);
+    step(45);
+    assert.equal(data.qpos[14], 0);
     data.qpos.set(blueHome, 7);
     step();
     if (n < 3) assert.equal(match.ownsWhite, false);

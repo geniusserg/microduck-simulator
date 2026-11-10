@@ -22,14 +22,14 @@ export function sportEffects(scene) {
     const label = new THREE.Sprite(
       new THREE.SpriteMaterial({ map, depthWrite: false }),
     );
-    label.scale.set(0.24, 0.08, 1);
+    label.scale.set(0.17, 0.057, 1);
     scene.add(label);
     return label;
   });
   const voices = [null, null];
   const sounds = {
     joy: ["excited", "laugh", "yes_fast"],
-    duel: ["tackle"],
+    duel: ["tackle", "snarl", "challenge", "rattle", "scramble"],
     breath: ["pant"],
     disappointed: ["sad"],
   };
@@ -117,7 +117,7 @@ export function sportEffects(scene) {
       const seq = frames[p.dataset.name];
       if (seq)
         return seq[Math.min(seq.length - 1, Math.floor(p.currentTime * 25))];
-      if (p.dataset.name === "tackle")
+      if (sounds.duel.includes(p.dataset.name))
         return [
           0.1,
           0.13 * Math.sin(p.currentTime * 23),

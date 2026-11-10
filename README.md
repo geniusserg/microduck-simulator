@@ -24,7 +24,7 @@ policies are lazy-loaded on the first switch.
 
 This version continues the Git history of the [Pollen Robotics simulator on Hugging Face](https://huggingface.co/spaces/pollen-robotics/microduck-simulator). The meshes, voices and policies used by the application are included in the checkout.
 
-Run `npm ci` and `npm run dev` inside `app`. In roller football White and Blue play to three goals. Both skate back to their starting marks after a goal. **Play as White** switches control during play. Select **Straight sprint** for one timed run or **Circuit skate** for continuous laps, distance counters and breathing breaks. The promenade and winter rink share the same physics world. Wander starts by playing with the ball or penguin and returns to it between other activities.
+Run `npm ci` and `npm run dev` inside `app`. In roller football White and Blue play to three goals. After a goal the ball rolls in the net for three seconds while the ducks react. It then returns to the centre and both skaters take up their starting marks facing one another. **Play as White** switches control during play. Select **Straight sprint** for one timed run or **Circuit skate** for continuous laps, distance counters and breathing breaks. The promenade and winter rink share the same physics world. Wander starts by playing with the ball or penguin and returns to it between other activities.
 
 **Record** captures joint poses for both ducks, the play object and voice cues at 50 Hz. **Save recording** keeps the replay in this browser. Open the title menu to watch a saved recording or the included rink demo. Drag to orbit, press 1 or 2 to follow a duck and 0 for free camera. Escape returns to the menu.
 
@@ -53,7 +53,7 @@ and [pollen-robotics/microduck_rl](https://github.com/pollen-robotics/microduck_
 - F: alternate left / right kicks (legs only)
 - R: sit / stand (legs) / crouch-glide (rollers)
 - G: ground pick (legs only)
-- C: cycle through behind, front, free orbit and overhead cameras
+- C: cycle through behind, front, free orbit, overhead and goal cameras
 - Space: reset
 - Drag to orbit, scroll to zoom
 - Colour dots: repaint the duck (it quacks)

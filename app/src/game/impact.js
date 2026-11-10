@@ -15,7 +15,7 @@ export function skateImpact(model, data, blue) {
     base = 0.034;
   const barrier = Math.hypot(height, base) - height;
   const excess = (closing / 2) ** 2 - 2 * 9.81 * barrier;
-  if (closing <= 0 || excess <= 0) return null;
+  if (closing < 1.5 || excess <= 0) return null;
   return () => {
     for (let i = 0; i < data.ncon; i++) {
       const c = data.contact.get(i);

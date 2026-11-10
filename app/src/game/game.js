@@ -616,22 +616,21 @@ async function boot({ scene, camera, renderer }) {
   const ZERO_CMD = new Float32Array(3);
   let moodUntil = 0;
   let nextHappy = 0;
-  function reactToPlay(fell) {
+  function reactToPlay() {
     const now = performance.now();
     const state = store();
-    if(state.environment==="football")return;
-    if (state.stayQuiet || !state.autoEmotions || state.menuOpen || document.hidden || inputLocked) return;
-    if (!fell && (recovery || mode === "roll" || now < nextHappy || (state.mood === "Upset" && now < moodUntil))) return;
-    setStore({ mood: fell ? "Upset" : "Delighted" });
-    moodUntil = now + (fell ? 8500 : 3600);
+    if (state.environment === "football" || state.stayQuiet || !state.autoEmotions ||
+        state.menuOpen || document.hidden || inputLocked || recovery || mode === "roll" || now < nextHappy) return;
+    setStore({mood: "Delighted"});
+    moodUntil = now + 3600;
     nextHappy = now + 5500;
-    playReaction(fell ? "devastated" : Math.random() < 0.65 ? "excited" : "laugh");
+    playReaction(Math.random() < .65 ? "excited" : "laugh");
   }
   const wander = createWander({
     arenaHalf: ARENA_HALF,
     onActivity: wanderActivity => {
       setStore({ wanderActivity });
-      if (wanderActivity.startsWith("Chasing")) reactToPlay(false);
+      if (wanderActivity.startsWith("Chasing")) reactToPlay();
     },
     peck:()=>triggerGroundPick("wander"),
     roll: () => triggerRoll("wander"),
@@ -688,6 +687,13 @@ async function boot({ scene, camera, renderer }) {
     const upX = 2 * (q[4]*q[6] - q[3]*q[5]);
     const upY = 2 * (q[5]*q[6] + q[3]*q[4]);
     const upright = 1 - 2 * (q[4]*q[4] + q[5]*q[5]);
+    if (match && !grabbed && upright > .30) {
+      // Act before a wheel lifts during a tackle. Tilt-rate damping absorbs
+      // the impulse while the solver remains responsible for translation.
+      force[3] = Math.max(-1.5,Math.min(1.5,-3.8*upY-.19*v[3]));
+      force[4] = Math.max(-1.5,Math.min(1.5, 3.8*upX-.19*v[4]));
+      return;
+    }
     const gain = grabbed || upright < 0.5 ? 0 : Math.min(1, Math.max(0, (0.973 - upright) / 0.075));
     const torque = value => gain * Math.max(-0.8, Math.min(0.8, value));
     force[3] = torque(-1.75 * upY - 0.075 * v[3]);
@@ -856,7 +862,7 @@ async function boot({ scene, camera, renderer }) {
   function startFallRecovery() {
     resetPostureState();
     recovery = { state: "fallen", steps: 0 };
-    reactToPlay(true);
+
     haptics.pulse("fall");
     syncButtons();
   }
@@ -1138,7 +1144,7 @@ async function boot({ scene, camera, renderer }) {
           const dBall = Math.hypot(
             data.qpos[bq] - data.qpos[0], data.qpos[bq + 1] - data.qpos[1]);
           if (dBall < 0.6) haptics.pulse("ballHit", 0.4 + 0.6 * u);
-          if (dBall < 0.23 && Math.hypot(v[b], v[b + 1]) > 0.08) reactToPlay(false);
+          if (dBall < 0.23 && Math.hypot(v[b], v[b + 1]) > 0.08) reactToPlay();
         }
       }
       ballPrevV[0] = v[b]; ballPrevV[1] = v[b + 1]; ballPrevV[2] = v[b + 2];
@@ -1197,7 +1203,7 @@ async function boot({ scene, camera, renderer }) {
     }
     for (let s = 0; s < DECIMATION; s++) {
       impactCooldown=Math.max(0,impactCooldown-TIMESTEP);
-      const impact=loco==="rollers" && friend && !impactCooldown ? skateImpact(model,data,friend.addresses) : null;
+      const impact=loco==="rollers" && !match && friend && !impactCooldown ? skateImpact(model,data,friend.addresses) : null;
       if (loco === "rollers") steadySkates(data, !!grab || impactCooldown>0);
       if(!impactCooldown)friend?.balance();
       else skidLoad?.(.50-impactCooldown);
@@ -1282,7 +1288,7 @@ async function boot({ scene, camera, renderer }) {
         // same haptic thud, once - fallenSince latches until reset/upright.
         if (fallenSince == null) {
           haptics.pulse("fall");
-          if (mode !== "roll") reactToPlay(true);
+
         }
         fallenSince ??= now;
         if (now - fallenSince > graceMs) {
@@ -1656,7 +1662,7 @@ async function boot({ scene, camera, renderer }) {
   // overwriting camera.position AFTER controls.update() so we never fight
   // OrbitControls' own spherical bookkeeping.
   let chaseCam = true, cameraMode="Behind";
-  const cameraModes=["Behind","Front","Free","Top"];
+  const cameraModes=["Behind","Front","Free","Top","Goal"];
   function selectCamera(name){
     cameraMode=name;chaseCam=name!=="Free";camResetT0=null;setStore({cameraMode:name});
     if(name==="Front" || name==="Behind"){
@@ -1689,6 +1695,14 @@ async function boot({ scene, camera, renderer }) {
   const wrapPi = (a) => Math.atan2(Math.sin(a), Math.cos(a));
   function updateChaseCam(tracked=data.qpos) {
     if(!chaseCam)return;
+    if(cameraMode==="Goal"){
+      const b=data.qpos.subarray(ballQposAdr);
+      const x=ballActive?Math.min(2.65,Math.max(-2.4,b[0])):tracked[0];
+      _target.set(x*.34+.94,.18,ballActive?-b[1]*.44:0);
+      controls.target.lerp(_target,.08);
+      _chasePos.set(-1.72,1.05,2.25);
+      camera.position.lerp(_chasePos,.12);camera.lookAt(controls.target);return;
+    }
     if(cameraMode==="Top"){
       const p=tracked,wide=!!match;
       _target.set(wide?0:p[0],0,wide?0:-p[1]);controls.target.lerp(_target,.15);
@@ -1928,7 +1942,7 @@ async function boot({ scene, camera, renderer }) {
     // camera by the same delta, so the camera-to-duck distance and viewing
     // angle stay constant while the duck walks. Paused while the reset
     // glide owns the camera.
-    if (!replay && chaseCam && cameraMode!=="Top" && camResetT0 === null) {
+    if (!replay && chaseCam && cameraMode!=="Top" && cameraMode!=="Goal" && camResetT0 === null) {
       _target.set(qpos[0], qpos[2], -qpos[1]);
       _follow.copy(_target).sub(controls.target);
       // Horizontal follow at the usual rate; vertical much slower so the
@@ -2519,7 +2533,7 @@ async function boot({ scene, camera, renderer }) {
         setStore({locoWant:"rollers",recoverInPlace:true,stayQuiet:false});
         if(isRace(kind))ball.despawn({cancelQueued:true,parkPhysics:parkBallPhysics});
         else if(!ballActive) spawnBall({fromQueue:true});
-        selectCamera("Top");
+        selectCamera(kind==="football"?"Goal":"Top");
         controls.target.set(0,0,0);camera.position.set(.05,4.3,4.2);controls.update();
         match=createMatch(kind,data,model,ballQposAdr,ballDofAdr,setStore,sportFX.cue);
       } else {

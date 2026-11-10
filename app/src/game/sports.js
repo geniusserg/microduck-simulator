@@ -172,16 +172,13 @@ export function createMatch(
       [1, Math.sin(angle)],
     ]) {
       data.qvel[d + k] += Math.max(
-        -0.1,
-        Math.min(0.1, speed * unit - data.qvel[d + k]),
+        -0.054,
+        Math.min(0.054, speed * unit - data.qvel[d + k]),
       );
     }
   }
   function kickoff() {
-    data.qpos.set(
-      [0, between(-0.11, 0.11), FOOTBALL_RADIUS + 0.004, 1, 0, 0, 0],
-      ballAdr,
-    );
+    data.qpos.set([0, 0, FOOTBALL_RADIUS + 0.004, 1, 0, 0, 0], ballAdr);
     data.qvel.fill(0, ballDof, ballDof + 6);
     prevBall = Array.from(ball());
     duel = 0;
@@ -207,21 +204,18 @@ export function createMatch(
   function goal(i) {
     score[i]++;
     winner = score[i] === 3 ? i : null;
-    phase = winner === null ? "return" : "won";
+    phase = "celebrate";
     phaseStart = clock;
     duel = 0;
     report({ score: [...score], winner: winner === null ? null : names[i] });
-    announce(
-      winner === null
-        ? names[i] + " scores · returning to start"
-        : names[i] + " wins!",
-    );
+    announce(winner === null ? names[i] + " scores!" : names[i] + " wins!");
     cue("disappointed", 1 - i);
     cue("joy", i);
-    data.qpos[ballAdr] = 0;
-    data.qpos[ballAdr + 1] = 0;
-    data.qpos[ballAdr + 2] = FOOTBALL_RADIUS + 0.002;
-    data.qvel.fill(0, ballDof, ballDof + 6);
+    // The back net takes the pace off the shot. Keep the ball free to
+    // rotate and travel sideways along it throughout the celebration.
+    data.qvel[ballDof] = (i ? -1 : 1) * 0.24;
+    data.qvel[ballDof + 1] = ball()[1] > 0 ? -0.2 : 0.2;
+    data.qvel[ballDof + 2] = Math.min(0.12, data.qvel[ballDof + 2]);
   }
   function kick(i, contested) {
     const b = ball(),
@@ -245,15 +239,31 @@ export function createMatch(
     duel = 0;
   }
   function footballStep(manual, manualCommand) {
+    if (phase === "celebrate") {
+      const sign = Math.sign(ball()[0]);
+      if (data.qvel[ballDof] * sign < 0) data.qvel[ballDof] *= 0.12;
+      for (let i = 0; i < 2; i++) drive(i, pose(i)[0], pose(i)[1], 0);
+      if (clock - phaseStart < 3.1) return;
+      phase = winner === null ? "return" : "won";
+      if (winner === null) announce("Returning to start");
+    }
     if (phase === "return" || phase === "won") {
       let arrived = true;
       for (let i = 0; i < 2; i++) {
         const [x, y] = starts[i],
           q = pose(i),
           dist = Math.hypot(x - q[0], y - q[1]);
-        drive(i, x, y, Math.min(0.98, dist * 3));
+        drive(i, x, y, dist > 0.13 ? Math.min(0.98, dist * 3) : 0);
         if (dist > 0.13) arrived = false;
-        else face(i, i ? Math.PI : 0);
+        else {
+          const target = i ? Math.PI : 0;
+          face(i, target);
+          const yaw = Math.atan2(
+            2 * (q[3] * q[6] + q[4] * q[5]),
+            1 - 2 * (q[5] ** 2 + q[6] ** 2),
+          );
+          if (Math.cos(target - yaw) < 0.95) arrived = false;
+        }
       }
       data.qpos.set([0, 0, FOOTBALL_RADIUS + 0.002], ballAdr);
       data.qvel.fill(0, ballDof, ballDof + 6);
@@ -322,7 +332,7 @@ export function createMatch(
         tx += (shift * dx) / gap;
         ty += (shift * dy) / gap;
       }
-      drive(i, tx, ty, duel ? 0.78 : 1.08, auto);
+      drive(i, tx, ty, duel ? 0.55 : Math.min(1.0, 0.42 + dist[i] * 1.6), auto);
       if (!auto && manualCommand) {
         const yaw = Math.atan2(
           2 * (q[3] * q[6] + q[4] * q[5]),
@@ -395,7 +405,7 @@ export function createMatch(
       return clock < restEnd ? (1 - Math.cos(clock * 8)) * 0.5 : 0;
     },
     get fireworks() {
-      return phase === "won" ? [winner, clock - phaseStart] : null;
+      return winner !== null ? [winner, clock - phaseStart] : null;
     },
     update(manual, manualCommand) {
       if (phase === "start") init();
