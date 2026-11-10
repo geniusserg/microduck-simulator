@@ -17,6 +17,19 @@ export function createWander({
     remaining = 0,
     waypoint = 0,
     peckIn = 0;
+  let retreating = false,
+    retreatTime = 0,
+    inwardX = 0,
+    inwardY = 0;
+  function releaseFromEdge(velocity, dof, dt) {
+    if (!active || !retreating || retreatTime < 0.7) return;
+    const inward = velocity[dof] * inwardX + velocity[dof + 1] * inwardY;
+    // A duck pinned against the fence may keep balancing without taking a step.
+    // Supply bounded traction only while its inward progress stays below a walk.
+    const impulse = Math.max(0, Math.min(0.2 - inward, 5 * dt));
+    velocity[dof] += impulse * inwardX;
+    velocity[dof + 1] += impulse * inwardY;
+  }
   let targetX = 0,
     targetY = 0,
     social = 0,
@@ -29,6 +42,7 @@ export function createWander({
   }
   function start() {
     active = true;
+    retreating = false;
     activity = "";
     shown = "";
     remaining = waypoint = social = cooldown = 0;
@@ -41,13 +55,25 @@ export function createWander({
   function update(dt, x, y, yaw, ball, limits, rollers, island, other) {
     command.fill(0);
     if (!active) return;
+    const half = island ? 1.44 : arenaHalf;
+    const edge = Math.max(Math.abs(x), Math.abs(y));
+    if (edge > half - 0.22) retreating = true;
+    if (edge < half - 0.58) retreating = false;
+    retreatTime = retreating ? retreatTime + dt : 0;
+    if (retreating) {
+      const r = Math.hypot(x, y);
+      inwardX = -x / r;
+      inwardY = -y / r;
+    }
     const near = other && Math.hypot(x - other[0], y - other[1]) < 0.28;
     cooldown -= dt;
     if (near && cooldown <= 0) {
       social = between(1, 2);
       cooldown = between(6, 12);
     }
-    if (social > 0) {
+    if (retreating) {
+      label("Turning back");
+    } else if (social > 0) {
       social -= dt;
       label("Greeting");
     } else {
@@ -81,7 +107,6 @@ export function createWander({
     }
     const chasing = activity.startsWith("Chasing") && ball && social <= 0;
     waypoint -= dt;
-    const half = island ? 1.44 : arenaHalf;
     if (waypoint <= 0 || Math.hypot(targetX - x, targetY - y) < 0.2) {
       const bearing = yaw + between(-1.7, 1.7),
         distance = between(0.6, 1.7);
@@ -96,16 +121,20 @@ export function createWander({
       tx = 2 * x - other[0];
       ty = 2 * y - other[1];
     }
+    if (retreating) {
+      tx = x * 0.5;
+      ty = y * 0.5;
+      waypoint = 0;
+    }
     const angle = directionTo(x, y, tx, ty, half, island) - yaw;
     const reverse = Math.cos(angle) < -0.35,
       steer = angle + (reverse ? Math.PI : 0);
     const error = Math.atan2(Math.sin(steer), Math.cos(steer));
-    const speed = activity === "Running" || chasing ? 0.94 : 0.53;
+    const speed = retreating || activity === "Running" || chasing ? 1 : 0.85;
     command[0] =
-      limits[0] *
+      (reverse ? limits[1] : limits[0]) *
       speed *
-      (reverse ? -0.65 : 1) *
-      Math.max(0.2, Math.cos(error));
+      Math.max(0.6, Math.cos(error));
     command[2] = Math.max(-limits[2], Math.min(limits[2], error * 1.8));
   }
   return {
@@ -113,6 +142,7 @@ export function createWander({
     start,
     stop,
     update,
+    releaseFromEdge,
     get active() {
       return active;
     },

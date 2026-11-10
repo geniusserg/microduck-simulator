@@ -316,7 +316,7 @@ async function boot({ scene, camera, renderer }) {
     const kf = doc.createElement("keyframe");
     kf.appendChild(el("key", {
       name: "STAND",
-      qpos: `${qposFree} ${qposJoints} ${BALL_PARK_POS} 1 0 0 0 .18 -.19 .12 1 0 0 0 ${qposJoints}`,
+      qpos: `${qposFree} ${qposJoints} ${BALL_PARK_POS} 1 0 0 0 -.55 .52 .12 1 0 0 0 ${qposJoints}`,
       ctrl: `${pose14} ${pose14}`,
     }));
     root.appendChild(kf);
@@ -1190,6 +1190,7 @@ async function boot({ scene, camera, renderer }) {
       if (loco === "rollers") steadySkates(data, !!grab || impactCooldown>0);
       if(!impactCooldown)friend?.balance();
       else skidLoad?.(.50-impactCooldown);
+      if(!inputLocked && !match && !grab && !recovery && mode==="walk") wander.releaseFromEdge(data.qvel,0,TIMESTEP);
       applyGrabForce(); // mouse perturbation, fresh velocity every substep
       mujoco.mj_step(model, data);
       if(impact){
@@ -2482,7 +2483,10 @@ async function boot({ scene, camera, renderer }) {
         chaseCam=false;camResetT0=null;
         controls.target.set(0,0,0);camera.position.set(.05,4.3,4.2);controls.update();
         match=createMatch(kind,data,model,ballQposAdr,ballDofAdr,setStore);
-      } else gameApi.startWander();
+      } else {
+        if(loco!=="legs"){activateLoco("legs");setStore({locoWant:"legs"});}
+        gameApi.startWander();
+      }
     },
     async setRink(enabled) {
       const revision = ++rinkRevision;

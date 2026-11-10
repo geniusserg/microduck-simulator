@@ -90,6 +90,7 @@ export function createMatch(kind, data, model, ballAdr, ballDof, report) {
   const times = [null, null],
     score = [0, 0],
     commands = roots.map(() => new Float32Array(3));
+  const returning = [false, false];
   let clock = 0,
     ready = false,
     shot = 0,
@@ -163,7 +164,7 @@ export function createMatch(kind, data, model, ballAdr, ballDof, report) {
         sign = i ? -1 : 1;
       const racing = kind === "race",
         active = !racing || (clock >= 3 && times[i] === null);
-      const dx = racing ? line - q[0] : bx - q[0],
+      const dx = racing ? (returning[i] ? -line : line) - q[0] : bx - q[0],
         dy = racing ? (i ? 0.23 : -0.23) - q[1] : by - q[1];
       const heading = Math.atan2(dy, dx),
         speed = active ? (racing ? speeds[i] : RVEL_FWD) : 0;
@@ -195,7 +196,10 @@ export function createMatch(kind, data, model, ballAdr, ballDof, report) {
         data.qvel[ballDof + 2] = 0.85;
         shot = 0.55;
       }
-      if (racing && active && q[0] >= line - 0.025) times[i] = clock - 3;
+      if (racing && active) {
+        if (returning[i] && q[0] <= -line + 0.025) times[i] = clock - 3;
+        else if (q[0] >= line - 0.025) returning[i] = true;
+      }
     }
     if (
       kind === "race" &&

@@ -642,7 +642,7 @@ function SportsHud(){
   const environment=useGame(s=>s.environment),score=useGame(s=>s.score),manual=useGame(s=>s.manual);
   const countdown=useGame(s=>s.countdown),times=useGame(s=>s.times),finished=useGame(s=>s.finished);
   return <Box sx={{position:"fixed",top:"1rem",left:"50%",transform:"translateX(-50%)",zIndex:12}}>
-    <HudPlate caption={environment==="football"?"Roller football":"Roller sprint"}>
+    <HudPlate caption={environment==="football"?"Roller football":"Sprint · out and back"}>
     {environment==="football"?<>
       <strong>MicroDuck {score[0]} — {score[1]} Blue</strong>
       <label><input type="checkbox" checked={!!manual} onChange={e=>useGame.setState({manual:e.target.checked})}/> Play as MicroDuck</label>

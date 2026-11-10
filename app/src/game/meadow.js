@@ -9,6 +9,7 @@ import {
   CMD_SIZE,
   ARENA_HALF,
   CTRL_DT,
+  DECIMATION,
   ACTION_SCALE,
 } from "./constants.js";
 
@@ -317,6 +318,7 @@ export function meadowDuck(scene, source, physics) {
   const last = new Float32Array(JOINT_NAMES.length);
   const obs = new Float32Array(OBS_SIZE);
   const command = OBS_SIZE - CMD_SIZE;
+  let sportsActive = false;
   let pick = 0;
   const wander = createWander({
     arenaHalf: ARENA_HALF,
@@ -353,6 +355,7 @@ export function meadowDuck(scene, source, physics) {
   reset(0.18, -0.19);
 
   async function step(playerX, playerY, sportsCommand, ball) {
+    sportsActive = !!sportsCommand;
     writeBodyObservation(obs, data, gyroAdr, trunkId, qposAdr, dofAdr, last);
     obs.fill(0, command);
     fallen = obs[5] > -0.5 ? fallen + CTRL_DT : 0;
@@ -435,6 +438,8 @@ export function meadowDuck(scene, source, physics) {
       ),
     },
     balance() {
+      if (!sportsActive && !recovering)
+        wander.releaseFromEdge(data.qvel, dof, CTRL_DT / DECIMATION);
       if (physics.skating) physics.steadySkates(data, false, pos, dof);
     },
     show(visible) {

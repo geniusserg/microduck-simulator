@@ -24,7 +24,7 @@ policies are lazy-loaded on the first switch.
 
 This version continues the Git history of the [Pollen Robotics simulator on Hugging Face](https://huggingface.co/spaces/pollen-robotics/microduck-simulator). The meshes, voices and policies used by the application are included in the checkout.
 
-Run `npm ci` and `npm run dev` inside `app`. Choose a meadow, winter rink, roller football or sprint from **Environment**. Both articulated robots, the play object, terrain and goal frames share one MuJoCo world. **Play as MicroDuck** switches between two computer players and keyboard control during a football match. The sprint starts after a three-second countdown.
+Run `npm ci` and `npm run dev` inside `app`. Choose a meadow, winter rink, roller football or sprint from **Environment**. Both articulated robots, the play object, terrain and goal frames share one MuJoCo world. **Play as MicroDuck** switches between two computer players and keyboard control during a football match. The out-and-back sprint starts after a three-second countdown. Each duck turns at the far line and finishes in its starting lane.
 
 **Record** captures joint poses for both ducks, the play object and voice cues at 50 Hz. **Save recording** keeps the replay in this browser. Open the title menu to watch a saved recording or the included rink demo. Drag to orbit, press 1 or 2 to follow a duck and 0 for free camera. Escape returns to the menu.
 
