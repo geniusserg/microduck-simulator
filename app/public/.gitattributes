@@ -1,0 +1,4 @@
+# The GitHub distribution includes the runtime assets directly.
+** -filter -diff -merge -text
+*.xml text diff merge
+*.json text diff merge
