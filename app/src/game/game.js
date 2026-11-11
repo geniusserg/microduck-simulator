@@ -65,6 +65,7 @@ import { sportEffects } from "./sport-effects.js";
 import {sportsField,createMatch,goalBars,FOOTBALL_RADIUS,isRace} from "./sports.js";
 import { createWander } from "./wander.js";
 import { createConversation } from "./conversation.js";
+import { createReelProps } from "./reel-props.js";
 import {saveClip,loadClip} from "./recordings.js";
 import { currentVoice,playVoice,voiceFrame, stopVoice, playReaction } from "./voice.js";
 import { initGhosts } from "./ghosts.js";
@@ -1497,6 +1498,11 @@ async function boot({ scene, camera, renderer }) {
     whiteName: "White",
     blueName: "Blue",
   });
+  // Reel-only props (empty trough + the flower the blue duck holds). Built
+  // only in ?reel=1 so the interactive sim stays unchanged.
+  const reelProps = new URLSearchParams(location.search).get("reel") === "1"
+    ? createReelProps({ scene, mainRig: rig, friendRig: friend.rig })
+    : null;
   const shadow = contactShadow(scene);
   let trunkGroup = rig.bodies.get("trunk_base");
   locos.legs = {
@@ -2728,6 +2734,9 @@ async function boot({ scene, camera, renderer }) {
     get props() { return propGroups; },
     get companionClearance(){return friend.clearance;},
     get companionPosition() { return Array.from(friend.position.slice(0, 3)); },
+    get reelProps() { return reelProps; },
+    get companionRig() { return friend.rig; },
+    get mainRig() { return rig; },
     get relief() { return reliefOn; },
     setRelief: (v) => { reliefOn = !!v; },
     get camResetActive() { return camResetT0 !== null; },
