@@ -316,7 +316,7 @@ export function createConversation({
 
   async function loadDialogue() {
     try {
-      const lines = await generateDialogue(null, { whiteName, blueName });
+      const lines = await generateDialogue({ whiteName, blueName });
       if (!state.active) return; // stopped while the request was in flight
       state.lines = lines;
     } catch (e) {

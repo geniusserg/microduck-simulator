@@ -4,17 +4,12 @@ import {
   extractJson,
   normalizeDialogue,
   MAX_LINES_PER_DUCK,
-  MODEL,
   getSettings,
   canChat,
   usageSummary,
   DEFAULT_DAILY_TOKENS,
   DEFAULT_COOLDOWN_MS,
 } from "../src/game/deepseek.js";
-
-test("MODEL defaults to deepseek-flash in a non-browser env", () => {
-  assert.equal(MODEL, "deepseek-flash");
-});
 
 test("extractJson parses a plain object", () => {
   assert.deepEqual(extractJson('{"lines":[]}'), { lines: [] });

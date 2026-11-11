@@ -15,7 +15,7 @@ import { keyframes } from "@mui/material/styles";
 import { useGame, gameApi } from "../store.js";
 import { VARIANT_LABELS, VARIANT_SWATCH_HEX } from "../game/variants.js";
 import { uiClick, isMuted, setMuted } from "../game/audio.js";
-import { getApiKey } from "../game/deepseek.js";
+import { getConfig, canChat } from "../game/deepseek.js";
 import { stopVoice, playVoice, stopAutomaticVoice, voiceBusy } from "../game/voice.js";
 import { ORANGE, MONO } from "../theme.js";
 import { ANTON, COMIC_INK, CREAM } from "./comic.jsx";
@@ -306,21 +306,31 @@ function TalkControl() {
   const conv = useGame((s) => s.conversation);
   const active = conv?.status === "approach" || conv?.status === "speak";
 
-  const onClick = () => {
+  const fail = (error) =>
+    useGame.setState({
+      conversation: { status: "error", speaker: -1, text: "", error },
+    });
+
+  const onClick = async () => {
     uiClick();
     if (active) {
       gameApi.stopConversation?.();
       return;
     }
-    if (!getApiKey()) {
-      useGame.setState({
-        conversation: {
-          status: "error",
-          speaker: -1,
-          text: "",
-          error: "No DeepSeek API key. Set it in Settings (press Esc).",
-        },
-      });
+    let cfg;
+    try {
+      cfg = await getConfig();
+    } catch {
+      fail("Local chat server not reachable. Start MicroDuck first.");
+      return;
+    }
+    if (cfg.provider === "deepseek" && !cfg.hasKey) {
+      fail("Chat isn't set up yet — open Settings (Esc) and save a DeepSeek key, or pick a local model.");
+      return;
+    }
+    const gate = canChat();
+    if (!gate.ok) {
+      fail(gate.reason);
       return;
     }
     gameApi.startConversation?.();

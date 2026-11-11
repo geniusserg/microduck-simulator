@@ -14,9 +14,8 @@ import { keyframes, styled } from "@mui/material/styles";
 import { useGame } from "../store.js";
 import { signed } from "../game/signed.js";
 import {
-  getApiKey,
-  setApiKey,
-  clearApiKey,
+  getConfig,
+  saveConfig,
   getSettings,
   setSettings,
   usageSummary,
@@ -156,10 +155,12 @@ function closeMenu() {
   playConfirmBloop();
 }
 
-// ── Settings (DeepSeek key + spend budget) ──────────────────────────────
-// The API key is entered here, on the main screen, and kept ONLY in this
-// browser's localStorage — it is never committed, never bundled, never
-// rendered in plain text, and sent only to api.deepseek.com.
+// ── Settings (chat provider + spend budget) ──────────────────────────────
+// The DeepSeek key is entered here on the main screen, but it is stored by
+// the LOCAL server in a file on this computer (~/.microduck/config.json) —
+// never in the browser and never in the repo — so it keeps working across
+// browsers and reboots. The browser only talks to the local server, which
+// proxies to DeepSeek (or a local model) and injects the key itself.
 const settingsFieldSx = {
   appearance: "none",
   fontFamily: MONO,
@@ -201,44 +202,82 @@ const settingsBtnSx = {
   "&:hover": { background: ORANGE, color: INK, borderColor: ORANGE },
 };
 
+const providerToggleSx = (active) => ({
+  ...settingsBtnSx,
+  background: active ? ORANGE : "transparent",
+  color: active ? INK : "rgba(255, 255, 255, 0.72)",
+  borderColor: active ? ORANGE : "rgba(255, 255, 255, 0.4)",
+});
+
 function Settings() {
   const [open, setOpen] = useState(false);
+  const [cfg, setCfg] = useState(null); // { provider, hasKey, localUrl, localModel }
   const [key, setKey] = useState("");
+  const [localUrl, setLocalUrl] = useState("");
+  const [localModel, setLocalModel] = useState("");
   const [budget, setBudget] = useState(() => String(getSettings().dailyTokens));
   const [usage, setUsage] = useState(() => usageSummary());
   const [note, setNote] = useState("");
-  const hasKey = !!getApiKey();
 
   const refresh = () => {
     setUsage(usageSummary());
     setBudget(String(getSettings().dailyTokens));
   };
+
+  const loadCfg = async () => {
+    try {
+      const c = await getConfig();
+      setCfg(c);
+      setLocalUrl(c.localUrl || "");
+      setLocalModel(c.localModel || "");
+    } catch (e) {
+      setNote(e?.message || "Local chat server not reachable. Start MicroDuck first.");
+    }
+  };
+
   const openSettings = () => {
     refresh();
     setNote("");
     setOpen(true);
+    loadCfg();
   };
+
   const close = () => setOpen(false);
+
+  const persist = async (patch, okMsg) => {
+    setNote("");
+    try {
+      const c = await saveConfig(patch);
+      setCfg(c);
+      setLocalUrl(c.localUrl || "");
+      setLocalModel(c.localModel || "");
+      setNote(okMsg);
+    } catch (e) {
+      setNote(e?.message || "Could not save settings.");
+    }
+  };
+
+  const saveProvider = (p) => persist({ provider: p }, "Saved on this computer.");
   const saveKey = () => {
-    const k = setApiKey(key);
-    if (!k) {
+    if (!key.trim()) {
       setNote("Paste a key first.");
       return;
     }
     setKey("");
-    setNote("Saved in this browser only.");
-    refresh();
+    persist({ deepseekKey: key.trim() }, "Saved on this computer.");
   };
-  const clearKey = () => {
-    clearApiKey();
-    setNote("Key removed.");
-    refresh();
-  };
+  const clearKey = () => persist({ clearKey: true }, "Key removed.");
+  const saveLocal = () =>
+    persist({ localUrl: localUrl.trim(), localModel: localModel.trim() }, "Saved on this computer.");
+
   const applyBudget = () => {
     const n = Math.max(0, Math.round(Number(budget) || 0));
     setSettings({ dailyTokens: n });
     refresh();
   };
+
+  const provider = cfg?.provider || "deepseek";
+  const hasKey = !!cfg?.hasKey;
 
   return (
     <>
@@ -263,7 +302,7 @@ function Settings() {
         >
           <Box
             sx={{
-              width: "min(30rem, 94vw)",
+              width: "min(32rem, 94vw)",
               border: `2px solid ${CREAM}`,
               background: INK,
               boxShadow: `8px 8px 0 ${ORANGE}`,
@@ -297,47 +336,126 @@ function Settings() {
                   mb: "0.5rem",
                 }}
               >
-                DeepSeek API key
+                Chat model
               </Box>
               <Box sx={{ display: "flex", gap: "0.6rem", flexWrap: "wrap" }}>
-                <Box
-                  component="input"
-                  type="password"
-                  autoFocus
-                  value={key}
-                  placeholder={hasKey ? "sk-… (saved)" : "sk-…"}
-                  aria-label="DeepSeek API key"
-                  onChange={(e) => setKey(e.target.value)}
-                  onKeyDown={(e) => {
-                    e.stopPropagation();
-                    if (e.key === "Enter") saveKey();
-                    if (e.key === "Escape") close();
-                  }}
-                  sx={settingsFieldSx}
-                />
-                <Box component="button" type="button" onClick={saveKey} sx={settingsBtnSx}>
-                  Save
+                <Box component="button" type="button" aria-pressed={provider === "deepseek"} onClick={() => saveProvider("deepseek")} sx={providerToggleSx(provider === "deepseek")}>
+                  DeepSeek API
                 </Box>
-                {hasKey && (
-                  <Box component="button" type="button" onClick={clearKey} sx={settingsBtnSx}>
-                    Clear
-                  </Box>
-                )}
+                <Box component="button" type="button" aria-pressed={provider === "local"} onClick={() => saveProvider("local")} sx={providerToggleSx(provider === "local")}>
+                  Local model
+                </Box>
               </Box>
-              <Typography
-                sx={{
-                  mt: "0.5rem",
-                  fontFamily: MONO,
-                  fontSize: "0.62rem",
-                  lineHeight: 1.6,
-                  letterSpacing: "0.04em",
-                  color: "rgba(255, 255, 255, 0.5)",
-                }}
-              >
-                Stored locally in this browser only — never committed to the repo,
-                never shown in plain text, sent only to api.deepseek.com.
-              </Typography>
             </Box>
+
+            {provider === "deepseek" ? (
+              <Box>
+                <Box
+                  sx={{
+                    fontFamily: MONO,
+                    fontSize: "0.66rem",
+                    fontWeight: 600,
+                    letterSpacing: "0.12em",
+                    textTransform: "uppercase",
+                    color: "rgba(255, 255, 255, 0.6)",
+                    mb: "0.5rem",
+                  }}
+                >
+                  DeepSeek API key
+                </Box>
+                <Box sx={{ display: "flex", gap: "0.6rem", flexWrap: "wrap" }}>
+                  <Box
+                    component="input"
+                    type="password"
+                    autoFocus
+                    value={key}
+                    placeholder={hasKey ? "sk-… (saved)" : "sk-…"}
+                    aria-label="DeepSeek API key"
+                    onChange={(e) => setKey(e.target.value)}
+                    onKeyDown={(e) => {
+                      e.stopPropagation();
+                      if (e.key === "Enter") saveKey();
+                      if (e.key === "Escape") close();
+                    }}
+                    sx={settingsFieldSx}
+                  />
+                  <Box component="button" type="button" onClick={saveKey} sx={settingsBtnSx}>
+                    Save
+                  </Box>
+                  {hasKey && (
+                    <Box component="button" type="button" onClick={clearKey} sx={settingsBtnSx}>
+                      Clear
+                    </Box>
+                  )}
+                </Box>
+                <Typography
+                  sx={{
+                    mt: "0.5rem",
+                    fontFamily: MONO,
+                    fontSize: "0.62rem",
+                    lineHeight: 1.6,
+                    letterSpacing: "0.04em",
+                    color: "rgba(255, 255, 255, 0.5)",
+                  }}
+                >
+                  Stored on this computer only, never in the browser or the repo.
+                  DeepSeek is prepaid, so it can never go negative or into debt.
+                </Typography>
+              </Box>
+            ) : (
+              <Box>
+                <Box
+                  sx={{
+                    fontFamily: MONO,
+                    fontSize: "0.66rem",
+                    fontWeight: 600,
+                    letterSpacing: "0.12em",
+                    textTransform: "uppercase",
+                    color: "rgba(255, 255, 255, 0.6)",
+                    mb: "0.5rem",
+                  }}
+                >
+                  Local model
+                </Box>
+                <Box sx={{ display: "flex", gap: "0.6rem", flexWrap: "wrap", mb: "0.5rem" }}>
+                  <Box
+                    component="input"
+                    type="text"
+                    value={localUrl}
+                    placeholder="http://localhost:11434"
+                    aria-label="Local model base URL"
+                    onChange={(e) => setLocalUrl(e.target.value)}
+                    onKeyDown={(e) => { e.stopPropagation(); if (e.key === "Enter") saveLocal(); }}
+                    sx={settingsFieldSx}
+                  />
+                  <Box
+                    component="input"
+                    type="text"
+                    value={localModel}
+                    placeholder="qwen2.5:7b"
+                    aria-label="Local model name"
+                    onChange={(e) => setLocalModel(e.target.value)}
+                    onKeyDown={(e) => { e.stopPropagation(); if (e.key === "Enter") saveLocal(); }}
+                    sx={{ ...settingsFieldSx, flex: "0 1 9rem", minWidth: "8rem" }}
+                  />
+                  <Box component="button" type="button" onClick={saveLocal} sx={settingsBtnSx}>
+                    Save
+                  </Box>
+                </Box>
+                <Typography
+                  sx={{
+                    fontFamily: MONO,
+                    fontSize: "0.62rem",
+                    lineHeight: 1.6,
+                    letterSpacing: "0.04em",
+                    color: "rgba(255, 255, 255, 0.5)",
+                  }}
+                >
+                  Point at Ollama or LM Studio (OpenAI-compatible endpoint). Runs
+                  entirely on this computer — no key and no network cost.
+                </Typography>
+              </Box>
+            )}
 
             <Box>
               <Box
@@ -388,7 +506,6 @@ function Settings() {
                 }}
               >
                 Today: {usage.used} / {usage.limit} tokens · resets midnight.
-                DeepSeek is prepaid, so it can never go negative or into debt.
               </Typography>
             </Box>
 
