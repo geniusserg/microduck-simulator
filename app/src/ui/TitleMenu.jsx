@@ -13,6 +13,15 @@ import Typography from "@mui/material/Typography";
 import { keyframes, styled } from "@mui/material/styles";
 import { useGame } from "../store.js";
 import { signed } from "../game/signed.js";
+import {
+  getApiKey,
+  setApiKey,
+  clearApiKey,
+  getSettings,
+  setSettings,
+  usageSummary,
+  resetUsage,
+} from "../game/deepseek.js";
 import { playConfirmBloop } from "../game/audio.js";
 import { INK, ORANGE, MONO } from "../theme.js";
 import { ComicButton, ComicTitle, HalftoneRamp, ANTON, CREAM } from "./comic.jsx";
@@ -145,6 +154,260 @@ function closeMenu() {
   // just created the shared AudioContext inside this very gesture, so the
   // bloop rides the unlock (the synth resume-retries if still suspended).
   playConfirmBloop();
+}
+
+// ── Settings (DeepSeek key + spend budget) ──────────────────────────────
+// The API key is entered here, on the main screen, and kept ONLY in this
+// browser's localStorage — it is never committed, never bundled, never
+// rendered in plain text, and sent only to api.deepseek.com.
+const settingsFieldSx = {
+  appearance: "none",
+  fontFamily: MONO,
+  fontSize: "0.78rem",
+  letterSpacing: "0.04em",
+  color: CREAM,
+  background: "#14141c",
+  border: `2px solid ${INK}`,
+  borderRadius: 0,
+  padding: "0.55rem 0.7rem",
+  margin: 0,
+  flex: "1 1 12rem",
+  minWidth: "10rem",
+  lineHeight: 1.4,
+  WebkitTapHighlightColor: "transparent",
+  "&:focus": { outline: `3px dashed ${ORANGE}`, outlineOffset: 2 },
+};
+
+const settingsBtnSx = {
+  appearance: "none",
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+  margin: 0,
+  padding: "0.5rem 0.9rem",
+  border: `2px solid ${CREAM}`,
+  borderRadius: 0,
+  background: "transparent",
+  color: CREAM,
+  cursor: "pointer",
+  fontFamily: ANTON,
+  fontSize: "0.8rem",
+  letterSpacing: "0.06em",
+  textTransform: "uppercase",
+  lineHeight: 1,
+  whiteSpace: "nowrap",
+  WebkitTapHighlightColor: "transparent",
+  transition: "background 0.12s ease, color 0.12s ease",
+  "&:hover": { background: ORANGE, color: INK, borderColor: ORANGE },
+};
+
+function Settings() {
+  const [open, setOpen] = useState(false);
+  const [key, setKey] = useState("");
+  const [budget, setBudget] = useState(() => String(getSettings().dailyTokens));
+  const [usage, setUsage] = useState(() => usageSummary());
+  const [note, setNote] = useState("");
+  const hasKey = !!getApiKey();
+
+  const refresh = () => {
+    setUsage(usageSummary());
+    setBudget(String(getSettings().dailyTokens));
+  };
+  const openSettings = () => {
+    refresh();
+    setNote("");
+    setOpen(true);
+  };
+  const close = () => setOpen(false);
+  const saveKey = () => {
+    const k = setApiKey(key);
+    if (!k) {
+      setNote("Paste a key first.");
+      return;
+    }
+    setKey("");
+    setNote("Saved in this browser only.");
+    refresh();
+  };
+  const clearKey = () => {
+    clearApiKey();
+    setNote("Key removed.");
+    refresh();
+  };
+  const applyBudget = () => {
+    const n = Math.max(0, Math.round(Number(budget) || 0));
+    setSettings({ dailyTokens: n });
+    refresh();
+  };
+
+  return (
+    <>
+      <ComicButton variant="outline" scheme="orange" size="xs" onDark onClick={openSettings}>
+        Settings
+      </ComicButton>
+      {open && (
+        <Box
+          role="dialog"
+          aria-modal="true"
+          aria-label="Settings"
+          sx={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 70,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            background: "rgba(8, 8, 12, 0.78)",
+            p: 2,
+          }}
+        >
+          <Box
+            sx={{
+              width: "min(30rem, 94vw)",
+              border: `2px solid ${CREAM}`,
+              background: INK,
+              boxShadow: `8px 8px 0 ${ORANGE}`,
+              p: "1.5rem",
+              display: "flex",
+              flexDirection: "column",
+              gap: "1rem",
+            }}
+          >
+            <Box
+              sx={{
+                fontFamily: ANTON,
+                fontSize: "1.6rem",
+                letterSpacing: "0.04em",
+                textTransform: "uppercase",
+                color: CREAM,
+              }}
+            >
+              Settings
+            </Box>
+
+            <Box>
+              <Box
+                sx={{
+                  fontFamily: MONO,
+                  fontSize: "0.66rem",
+                  fontWeight: 600,
+                  letterSpacing: "0.12em",
+                  textTransform: "uppercase",
+                  color: "rgba(255, 255, 255, 0.6)",
+                  mb: "0.5rem",
+                }}
+              >
+                DeepSeek API key
+              </Box>
+              <Box sx={{ display: "flex", gap: "0.6rem", flexWrap: "wrap" }}>
+                <Box
+                  component="input"
+                  type="password"
+                  autoFocus
+                  value={key}
+                  placeholder={hasKey ? "sk-… (saved)" : "sk-…"}
+                  aria-label="DeepSeek API key"
+                  onChange={(e) => setKey(e.target.value)}
+                  onKeyDown={(e) => {
+                    e.stopPropagation();
+                    if (e.key === "Enter") saveKey();
+                    if (e.key === "Escape") close();
+                  }}
+                  sx={settingsFieldSx}
+                />
+                <Box component="button" type="button" onClick={saveKey} sx={settingsBtnSx}>
+                  Save
+                </Box>
+                {hasKey && (
+                  <Box component="button" type="button" onClick={clearKey} sx={settingsBtnSx}>
+                    Clear
+                  </Box>
+                )}
+              </Box>
+              <Typography
+                sx={{
+                  mt: "0.5rem",
+                  fontFamily: MONO,
+                  fontSize: "0.62rem",
+                  lineHeight: 1.6,
+                  letterSpacing: "0.04em",
+                  color: "rgba(255, 255, 255, 0.5)",
+                }}
+              >
+                Stored locally in this browser only — never committed to the repo,
+                never shown in plain text, sent only to api.deepseek.com.
+              </Typography>
+            </Box>
+
+            <Box>
+              <Box
+                sx={{
+                  fontFamily: MONO,
+                  fontSize: "0.66rem",
+                  fontWeight: 600,
+                  letterSpacing: "0.12em",
+                  textTransform: "uppercase",
+                  color: "rgba(255, 255, 255, 0.6)",
+                  mb: "0.5rem",
+                }}
+              >
+                Daily budget
+              </Box>
+              <Box sx={{ display: "flex", gap: "0.6rem", alignItems: "center", flexWrap: "wrap" }}>
+                <Box
+                  component="input"
+                  type="number"
+                  min="0"
+                  value={budget}
+                  aria-label="Daily token budget"
+                  onChange={(e) => setBudget(e.target.value)}
+                  onKeyDown={(e) => {
+                    e.stopPropagation();
+                    if (e.key === "Enter") applyBudget();
+                  }}
+                  sx={{ ...settingsFieldSx, width: "7rem", flex: "none", minWidth: 0 }}
+                />
+                <Box component="span" sx={{ fontFamily: MONO, fontSize: "0.72rem", color: "rgba(255, 255, 255, 0.7)" }}>
+                  tokens / day
+                </Box>
+                <Box component="button" type="button" onClick={applyBudget} sx={settingsBtnSx}>
+                  Set
+                </Box>
+                <Box component="button" type="button" onClick={() => { resetUsage(); refresh(); }} sx={settingsBtnSx}>
+                  Reset today
+                </Box>
+              </Box>
+              <Typography
+                sx={{
+                  mt: "0.5rem",
+                  fontFamily: MONO,
+                  fontSize: "0.62rem",
+                  lineHeight: 1.6,
+                  letterSpacing: "0.04em",
+                  color: "rgba(255, 255, 255, 0.5)",
+                }}
+              >
+                Today: {usage.used} / {usage.limit} tokens · resets midnight.
+                DeepSeek is prepaid, so it can never go negative or into debt.
+              </Typography>
+            </Box>
+
+            {note && (
+              <Typography role="alert" sx={{ fontFamily: MONO, fontSize: "0.66rem", color: ORANGE }}>
+                {note}
+              </Typography>
+            )}
+
+            <Box sx={{ display: "flex", justifyContent: "flex-end" }}>
+              <Box component="button" type="button" onClick={close} sx={settingsBtnSx}>
+                Close
+              </Box>
+            </Box>
+          </Box>
+        </Box>
+      )}
+    </>
+  );
 }
 
 export default function TitleMenu() {
@@ -454,7 +717,7 @@ export default function TitleMenu() {
       </Box>
       )}
 
-      {ready && <Box sx={{position:"absolute",top:"1rem",right:"1rem",color:"white",zIndex:2}}><EnvironmentMenu/><PlaybackMenu/></Box>}
+      {ready && <Box sx={{position:"absolute",top:"1rem",right:"1rem",color:"white",zIndex:2,display:"flex",flexDirection:"column",alignItems:"flex-end",gap:"0.5rem"}}><EnvironmentMenu/><PlaybackMenu/><Settings/></Box>}
 
       {/* Loading gate: one centered spinner on bare ink until logo,
           fonts, the duck stage's assets and the game boot are all in -
