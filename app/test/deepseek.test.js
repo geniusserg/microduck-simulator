@@ -32,17 +32,24 @@ test("extractJson parses a reply with the object before trailing text", () => {
   assert.deepEqual(extractJson(text), { lines: [{ duck: "blue", line: "yo" }] });
 });
 
-test("normalizeDialogue maps speaker tokens and trims text", () => {
+test("normalizeDialogue maps speaker tokens, trims text and tags emotion", () => {
   const out = normalizeDialogue({
     lines: [
-      { duck: "white", line: "  Hello   there  " },
+      { duck: "white", line: "  Hello   there  ", emotion: "excited" },
       { duck: "blue", line: "Hi!" },
     ],
   });
   assert.deepEqual(out, [
-    { duck: 0, text: "Hello there" },
-    { duck: 1, text: "Hi!" },
+    { duck: 0, text: "Hello there", emotion: "excited" },
+    { duck: 1, text: "Hi!", emotion: "neutral" },
   ]);
+});
+
+test("normalizeDialogue falls back to neutral for unknown emotions", () => {
+  const out = normalizeDialogue([
+    { duck: "white", line: "one", emotion: "ecstatic" },
+  ]);
+  assert.deepEqual(out, [{ duck: 0, text: "one", emotion: "neutral" }]);
 });
 
 test("normalizeDialogue re-assigns alternation when the model forgets", () => {
@@ -52,9 +59,9 @@ test("normalizeDialogue re-assigns alternation when the model forgets", () => {
     { duck: "blue", line: "three" },
   ]);
   assert.deepEqual(out, [
-    { duck: 0, text: "one" },
-    { duck: 1, text: "two" }, // corrected to alternate
-    { duck: 0, text: "three" },
+    { duck: 0, text: "one", emotion: "neutral" },
+    { duck: 1, text: "two", emotion: "neutral" }, // corrected to alternate
+    { duck: 0, text: "three", emotion: "neutral" },
   ]);
 });
 

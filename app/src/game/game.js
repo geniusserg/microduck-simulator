@@ -984,7 +984,7 @@ async function boot({ scene, camera, renderer }) {
     }
     for (let c = 0; c < CMD_SIZE; c++) obs[i++] = cmd[c];
     const expression = voiceFrame();
-    if (expression && loco === "legs" && !gpZero && !scriptRun) {
+    if (expression && loco === "legs" && !gpZero && !scriptRun && !conversation?.active) {
       for (let h = 0; h < 4; h++) obs[OBS_SIZE - CMD_SIZE + 3 + h] += expression[h];
     }
     return obs;

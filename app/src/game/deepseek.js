@@ -23,6 +23,20 @@ export const MODEL =
 export const MAX_LINES_PER_DUCK = 10;
 export const TARGET_LINES_PER_DUCK = 6;
 
+// Emotions the model may tag a line with. Each maps to the duck's own
+// voice-bank clips (angry.wav, curious.wav, ...) so the duck expresses the
+// line with its real microduck sounds instead of synthetic speech.
+export const EMOTIONS = [
+  "neutral",
+  "happy",
+  "excited",
+  "curious",
+  "sad",
+  "angry",
+  "amused",
+  "surprised",
+];
+
 export function getApiKey() {
   try {
     return localStorage.getItem(KEY_STORE) || "";
@@ -174,8 +188,10 @@ function buildSystem(whiteName, blueName) {
     `${MAX_LINES_PER_DUCK} lines per duck, but never more, and never leave the chat hanging.`,
     `Keep each line short and spoken (roughly 3 to 18 words). Duck-appropriate topics: the pond,`,
     `the weather, snacks, their little sports games, waddling. No humans, no code, no lists.`,
+    `Each line also carries an "emotion" - the duck's feeling for that line - chosen from exactly`,
+    `this set: ${EMOTIONS.join(", ")}. Vary them to match the flow of the chat.`,
     `Respond with ONLY a JSON object, no commentary, in exactly this shape:`,
-    `{"lines":[{"duck":"white","line":"..."},{"duck":"blue","line":"..."}]}`,
+    `{"lines":[{"duck":"white","line":"...","emotion":"happy"},{"duck":"blue","line":"...","emotion":"curious"}]}`,
     `"duck" is either "white" or "blue" and must alternate.`,
   ].join(" ");
 }
@@ -189,6 +205,13 @@ function duckIndex(token) {
   if (["white", "0", "a", "first", "left", "duck1"].includes(t)) return 0;
   if (["blue", "1", "b", "second", "right", "duck2"].includes(t)) return 1;
   return null;
+}
+
+// Validate the model's emotion tag against the allowed set; anything else
+// (or missing) falls back to neutral.
+function normalizeEmotion(token) {
+  const t = String(token ?? "").trim().toLowerCase();
+  return EMOTIONS.includes(t) ? t : "neutral";
 }
 
 // Extract the first JSON object out of a possibly fenced / prefixed reply.
@@ -242,7 +265,7 @@ export function normalizeDialogue(raw) {
     }
     if (counts[duck] >= MAX_LINES_PER_DUCK) continue;
     counts[duck]++;
-    out.push({ duck, text });
+    out.push({ duck, text, emotion: normalizeEmotion(entry?.emotion) });
   }
   return out;
 }

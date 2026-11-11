@@ -4,8 +4,8 @@
 //   - approach: steer both ducks to opposite sides of a meet point, facing
 //     each other (velocity commands handed back to the game loop);
 //   - speak: play the DeepSeek-generated lines one at a time — a speech
-//     bubble above the speaker, Web Speech TTS for the audio, and a mouth
-//     flap on the speaker's jaw.
+//     bubble above the speaker, the duck's own emotion voice clips for the
+//     audio, and the clip's viseme track driving the speaker's beak.
 //
 // The director is deliberately self-contained: game.js passes small
 // accessor/effect callbacks so nothing in here reaches into the physics
@@ -14,6 +14,7 @@
 import * as THREE from "three";
 import { setJawOpen } from "./duck.js";
 import { generateDialogue } from "./deepseek.js";
+import { playVoice, voiceFrame, stopVoice } from "./voice.js";
 
 // ── Tuning ──────────────────────────────────────────────────────────────
 const MEET_OFFSET = 0.6; // each duck stops this far from the meet center
@@ -36,6 +37,27 @@ function wrapPi(a) {
   return a;
 }
 const clampMeet = (v) => Math.max(-1.2, Math.min(1.2, v));
+
+// ── Emotion -> duck-voice clip ───────────────────────────────────────────
+// Each dialogue line carries an emotion; it is spoken with the SAME voice
+// bank the duck uses for its in-game reactions (duck-voice/*.wav), so the
+// duck "talks" like the microduck and the clip's viseme track (voice.js)
+// drives the beak. Long songs are excluded; a few clips are picked at
+// random per emotion for variety.
+const EMOTION_CLIPS = {
+  neutral: ["mmh", "curious"],
+  happy: ["yes", "yes_fast", "excited"],
+  excited: ["excited"],
+  curious: ["curious"],
+  sad: ["sad", "no", "mmh"],
+  angry: ["angry", "defiant", "snarl", "challenge"],
+  amused: ["laugh", "mock"],
+  surprised: ["curious", "excited"],
+};
+function clipFor(emotion) {
+  const pool = EMOTION_CLIPS[emotion] || EMOTION_CLIPS.neutral;
+  return pool[(Math.random() * pool.length) | 0];
+}
 
 // Steer one duck toward (tx,ty) and, once close, align it to `face`.
 // Returns true when it is both close and aligned (i.e. "arrived").
@@ -134,9 +156,10 @@ export function createConversation({
   function setBubbleText(which, text) {
     const b = bubbles[which];
     const ctx = b.canvas.getContext("2d");
-    const font = '600 40px "Anton", "Arial Narrow", Arial, sans-serif';
+    // Plain, smaller, easy-to-read type (no display font) for the dialogue.
+    const font = '500 24px system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif';
     ctx.font = font;
-    const maxW = 480;
+    const maxW = 400;
     const words = String(text).split(/\s+/);
     const lines = [];
     let cur = "";
@@ -151,9 +174,9 @@ export function createConversation({
     }
     if (cur) lines.push(cur);
 
-    const lineH = 48;
-    const padX = 26;
-    const padY = 20;
+    const lineH = 30;
+    const padX = 18;
+    const padY = 14;
     const textW = Math.max(...lines.map((l) => ctx.measureText(l).width));
     const w = Math.ceil(textW + padX * 2);
     const h = Math.ceil(lines.length * lineH + padY * 2 + 14);
@@ -215,32 +238,11 @@ export function createConversation({
     b.sprite.position.set(p.x, p.y + HEAD_OFFSET + b.worldH / 2, p.z);
   }
 
-  // ── Audio (Web Speech TTS) ────────────────────────────────────────────
-  function speak(text, duck) {
-    try {
-      if (!("speechSynthesis" in window)) return;
-      const synth = window.speechSynthesis;
-      synth.cancel();
-      const u = new SpeechSynthesisUtterance(text);
-      u.pitch = duck === 0 ? 1.18 : 0.8;
-      u.rate = duck === 0 ? 1.02 : 0.97;
-      const voices = synth.getVoices();
-      if (voices.length) {
-        const fem = voices.find((v) => /samantha|female|zira|karen|victoria|allison|aria|jenny/i.test(v.name));
-        const male = voices.find((v) => /daniel|alex|david|fred|oliver|male|guy/i.test(v.name));
-        u.voice = duck === 0 ? fem || voices[0] : male || fem || voices[0];
-      }
-      synth.speak(u);
-    } catch {
-      /* TTS unavailable: the bubble still carries the line */
-    }
-  }
-  function stopSpeech() {
-    try {
-      window.speechSynthesis?.cancel();
-    } catch {
-      /* ignore */
-    }
+  // ── Duck voice (emotion clips, no TTS) ────────────────────────────────
+  // Fire-and-forget: the clip's own viseme track (voiceFrame) drives the
+  // beak, and the next line's playVoice() stops the previous clip.
+  function playLineVoice(emotion) {
+    playVoice(clipFor(emotion)).catch(() => {});
   }
 
   // ── Sequence ──────────────────────────────────────────────────────────
@@ -249,7 +251,7 @@ export function createConversation({
     state.lineIndex = i;
     state.speaker = line.duck;
     state.text = line.text;
-    speak(line.text, line.duck);
+    playLineVoice(line.emotion);
     const speechDur = Math.max(MIN_LINE_MS, 600 + line.text.length * 55);
     state.speechEndAt = performance.now() + speechDur;
     state.lineEndAt = state.speechEndAt + LINE_PAUSE_MS;
@@ -276,7 +278,7 @@ export function createConversation({
 
   function finish() {
     clearBubbles();
-    stopSpeech();
+    stopVoice();
     state.active = false;
     state.phase = "idle";
     state.speaker = -1;
@@ -294,7 +296,7 @@ export function createConversation({
       state.lines = lines;
     } catch (e) {
       if (!state.active) return;
-      stopSpeech();
+      stopVoice();
       clearBubbles();
       state.active = false;
       state.phase = "idle";
@@ -352,12 +354,18 @@ export function createConversation({
     positionBubble(0, rig);
     positionBubble(1, getFriend()?.rig);
 
-    // Jaw flap: only the speaking duck's beak moves.
-    const t = performance.now() / 1000;
-    const flap = state.flap ? 0.25 + 0.55 * Math.abs(Math.sin(t * 10)) : 0;
-    setJawOpen(rig, state.flap && state.speaker === 0 ? flap : 0);
+    // Beak: the speaking duck follows the emotion clip's viseme track
+    // (voiceFrame). If the clip has ended but the bubble is still up, fall
+    // back to a gentle flap so the mouth keeps moving while the text reads.
+    const frame = voiceFrame();
+    let mouth = frame ? frame[4] : 0;
+    if (state.flap && (!frame || mouth < 0.02)) {
+      const t = performance.now() / 1000;
+      mouth = 0.25 + 0.55 * Math.abs(Math.sin(t * 10));
+    }
+    setJawOpen(rig, state.flap && state.speaker === 0 ? Math.min(1, mouth) : 0);
     const friendRig = getFriend()?.rig;
-    if (friendRig) setJawOpen(friendRig, state.flap && state.speaker === 1 ? flap : 0);
+    if (friendRig) setJawOpen(friendRig, state.flap && state.speaker === 1 ? Math.min(1, mouth) : 0);
   }
 
   function start() {
@@ -391,6 +399,7 @@ export function createConversation({
     state.speaker = -1;
     state.flap = false;
     clearBubbles();
+    stopVoice();
     setInputLock(true);
     setStore({ conversation: { status: "approach", speaker: -1, text: "" } });
     loadDialogue();
@@ -399,7 +408,7 @@ export function createConversation({
   function stop() {
     if (!state.active) return;
     clearBubbles();
-    stopSpeech();
+    stopVoice();
     state.active = false;
     state.phase = "idle";
     state.speaker = -1;
