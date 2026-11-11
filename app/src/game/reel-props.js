@@ -36,6 +36,21 @@ function buildFlower() {
   return g;
 }
 
+function buildCap(color) {
+  const g = new THREE.Group();
+  const mat = new THREE.MeshStandardMaterial({ color, roughness: 0.6, metalness: 0 });
+  const dome = new THREE.Mesh(
+    new THREE.SphereGeometry(0.056, 16, 10, 0, Math.PI * 2, 0, Math.PI / 2),
+    mat,
+  );
+  const brim = new THREE.Mesh(new THREE.BoxGeometry(0.088, 0.007, 0.10), mat);
+  brim.position.set(0.056, 0.003, 0);
+  const button = new THREE.Mesh(new THREE.SphereGeometry(0.008, 8, 6), mat);
+  button.position.y = 0.056;
+  g.add(dome, brim, button);
+  return g;
+}
+
 export function createReelProps({ scene, mainRig, friendRig }) {
   const group = new THREE.Group();
   group.name = "Reel props";
@@ -81,6 +96,13 @@ export function createReelProps({ scene, mainRig, friendRig }) {
   flower.visible = false;
   group.add(flower);
 
+  // ── Caps (Chip = red, Dale = blue) ────────────────────────────────────
+  const capChip = buildCap(0xd94a3d);
+  const capDale = buildCap(0x2f6fd0);
+  capChip.visible = false;
+  capDale.visible = false;
+  group.add(capChip, capDale);
+
   const _box = new THREE.Box3();
   const _p = new THREE.Vector3();
   const GROUND = new THREE.Vector3(-0.20, 0.045, 0.02);
@@ -97,6 +119,33 @@ export function createReelProps({ scene, mainRig, friendRig }) {
     _box.setFromObject(jawMesh);
     if (!Number.isFinite(_box.getCenter(_p).x)) return null;
     return _box.getCenter(new THREE.Vector3());
+  }
+
+  function headTop(rig) {
+    const head = rig?.bodies?.get("jaw_soft");
+    if (!head) return null;
+    head.updateWorldMatrix(true, true);
+    _box.setFromObject(head);
+    const wp = new THREE.Vector3();
+    head.getWorldPosition(wp);
+    return new THREE.Vector3(wp.x, _box.max.y - 0.035, wp.z);
+  }
+
+  function placeCap(cap, rig, yaw) {
+    const top = headTop(rig);
+    if (!top) {
+      cap.visible = false;
+      return;
+    }
+    cap.position.copy(top);
+    cap.rotation.set(0, yaw, 0);
+    cap.visible = true;
+  }
+
+  // Called every frame by the renderer so the caps ride the heads.
+  function updateCaps() {
+    placeCap(capChip, mainRig, 0);
+    placeCap(capDale, friendRig, Math.PI);
   }
 
   function rigOf(which) {
@@ -164,5 +213,6 @@ export function createReelProps({ scene, mainRig, friendRig }) {
     flowerLower,
     flowerPickup,
     flowerSwap,
+    updateCaps,
   };
 }

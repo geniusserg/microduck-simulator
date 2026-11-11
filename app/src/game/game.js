@@ -1495,8 +1495,8 @@ async function boot({ scene, camera, renderer }) {
       loco !== "legs" ||
       !!replay ||
       !store().entered,
-    whiteName: "White",
-    blueName: "Blue",
+    whiteName: "Chip",
+    blueName: "Dale",
   });
   // Reel-only props (empty trough + the flower the blue duck holds). Built
   // only in ?reel=1 so the interactive sim stays unchanged.

@@ -3,7 +3,7 @@ import frames from "./voice-frames.json";
 import { fadeOut } from "./voice.js";
 
 export function sportEffects(scene) {
-  const labels = ["White", "Blue"].map((name, i) => {
+  const labels = ["Chip", "Dale"].map((name, i) => {
     const canvas = document.createElement("canvas");
     canvas.width = 192;
     canvas.height = 64;
