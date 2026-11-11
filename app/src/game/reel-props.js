@@ -38,25 +38,39 @@ export function createReelProps({ scene, mainRig, friendRig }) {
   group.name = "Reel props";
   scene.add(group);
 
-  const wood = new THREE.MeshStandardMaterial({ color: 0x9a6a3f, roughness: 0.75, metalness: 0 });
-  const woodDark = new THREE.MeshStandardMaterial({ color: 0x6a4526, roughness: 0.85, metalness: 0 });
+  const wood = new THREE.MeshStandardMaterial({ color: 0x9a6a3f, roughness: 0.75, metalness: 0, side: THREE.DoubleSide });
+  const woodDark = new THREE.MeshStandardMaterial({ color: 0x6a4526, roughness: 0.85, metalness: 0, side: THREE.DoubleSide });
 
-  // ── Empty trough (кадка) ──────────────────────────────────────────────
+  // ── Empty trough (кадка), smaller, with a few leftover crumbs ─────────
   const trough = new THREE.Group();
-  const tub = new THREE.Mesh(new THREE.CylinderGeometry(0.26, 0.21, 0.26, 40, 1, true), wood);
-  tub.position.y = 0.13;
+  const tub = new THREE.Mesh(new THREE.CylinderGeometry(0.17, 0.13, 0.22, 40, 1, true), wood);
+  tub.position.y = 0.11;
   const inner = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.23, 0.18, 0.23, 40, 1, true),
+    new THREE.CylinderGeometry(0.145, 0.11, 0.20, 40, 1, true),
     woodDark,
   );
-  inner.position.y = 0.12;
-  const bottom = new THREE.Mesh(new THREE.CircleGeometry(0.21, 40), woodDark);
+  inner.position.y = 0.10;
+  const bottom = new THREE.Mesh(new THREE.CircleGeometry(0.13, 40), woodDark);
   bottom.rotation.x = -Math.PI / 2;
   bottom.position.y = 0.004;
-  const rim = new THREE.Mesh(new THREE.TorusGeometry(0.26, 0.018, 10, 48), woodDark);
+  const rim = new THREE.Mesh(new THREE.TorusGeometry(0.17, 0.015, 10, 48), woodDark);
   rim.rotation.x = Math.PI / 2;
-  rim.position.y = 0.26;
+  rim.position.y = 0.22;
   trough.add(tub, inner, bottom, rim);
+
+  // leftover food crumbs scattered on the bottom
+  const crumbMats = [0xc9a15a, 0xb8863b, 0x8f6a33].map(
+    (c) => new THREE.MeshStandardMaterial({ color: c, roughness: 0.9 }),
+  );
+  const crumbGeom = new THREE.SphereGeometry(0.012, 6, 4);
+  for (let i = 0; i < 11; i++) {
+    const a = (i / 11) * Math.PI * 2 + 0.4;
+    const r = 0.015 + (i % 4) * 0.02;
+    const crumb = new THREE.Mesh(crumbGeom, crumbMats[i % crumbMats.length]);
+    crumb.scale.set(1 + (i % 3) * 0.3, 0.4, 1);
+    crumb.position.set(Math.cos(a) * r, 0.016, Math.sin(a) * r);
+    trough.add(crumb);
+  }
   trough.position.set(0, 0, 0);
   group.add(trough);
 
