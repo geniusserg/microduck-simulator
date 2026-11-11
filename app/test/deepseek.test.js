@@ -92,3 +92,22 @@ test("usageSummary reports the daily limit", () => {
   assert.equal(s.used, 0);
   assert.equal(s.cooldownLeftMs, 0);
 });
+
+test("extractJson parses a top-level JSON array", () => {
+  assert.deepEqual(extractJson('[{"duck":"white","line":"hi"}]'), [
+    { duck: "white", line: "hi" },
+  ]);
+});
+
+test("normalizeDialogue reads content/message field names", () => {
+  const out = normalizeDialogue({
+    lines: [
+      { duck: "white", content: "first" },
+      { duck: "blue", message: "second" },
+    ],
+  });
+  assert.deepEqual(out, [
+    { duck: 0, text: "first", emotion: "neutral" },
+    { duck: 1, text: "second", emotion: "neutral" },
+  ]);
+});

@@ -160,6 +160,60 @@ const SCENARIOS = [
   "одна учит вторую новому танцу, и у второй ничего не выходит",
 ];
 
+// Curated Russian fallback dialogues, used only if the model ever returns
+// something unparsable — so the ducks ALWAYS have something to say and the
+// "no usable dialogue" failure can never surface.
+const FALLBACK_DIALOGUES = [
+  [
+    { duck: 0, text: "Ну что, кто первый до кормушки?", emotion: "excited" },
+    { duck: 1, text: "Опять соревноваться? Я только поел!", emotion: "surprised" },
+    { duck: 0, text: "Так это разминка перед обедом. Погнали!", emotion: "happy" },
+    { duck: 1, text: "Ладно, но без подножек на повороте.", emotion: "angry" },
+    { duck: 0, text: "Кто? Я? Да никогда в жизни!", emotion: "amused" },
+    { duck: 1, text: "Вот и не делай так, как в прошлый раз!", emotion: "angry" },
+    { duck: 0, text: "Это была стратегическая пауза в камышах!", emotion: "amused" },
+    { duck: 1, text: "Стратег нашёлся. Ну, догоняй!", emotion: "excited" },
+  ],
+  [
+    { duck: 0, text: "Ты видел, какая лужа после дождя? Огромная!", emotion: "excited" },
+    { duck: 1, text: "Видел. Уже прикидываю, как в ней наплаваться.", emotion: "happy" },
+    { duck: 0, text: "Только не утащи туда мой мячик, как в тот раз.", emotion: "angry" },
+    { duck: 1, text: "Он сам туда закатился, честное кря!", emotion: "surprised" },
+    { duck: 0, text: "Ага, а лапки у него, конечно, были.", emotion: "amused" },
+    { duck: 1, text: "Ну всё, пошли купаться, ворчун.", emotion: "happy" },
+    { duck: 0, text: "Ладно. Но мячик держи подальше от воды!", emotion: "curious" },
+  ],
+  [
+    { duck: 0, text: "Мне сегодня приснилось, что я летаю над прудом.", emotion: "surprised" },
+    { duck: 1, text: "Утки не летают во сне, мы же... ну, почти.", emotion: "curious" },
+    { duck: 0, text: "А я вот летал! И рыбы махали мне плавниками.", emotion: "excited" },
+    { duck: 1, text: "Всё, тебе точно хватит есть перед сном.", emotion: "amused" },
+    { duck: 0, text: "Ничего ты не понимаешь в больших мечтах!", emotion: "angry" },
+    { duck: 1, text: "Ладно-ладно, мечтатель. Научишь и меня летать?", emotion: "happy" },
+    { duck: 0, text: "Только если будешь слушаться капитана.", emotion: "amused" },
+  ],
+  [
+    { duck: 0, text: "Я нашёл блестящую монетку у берега!", emotion: "excited" },
+    { duck: 1, text: "Ух ты! Покажи! Это же целое сокровище.", emotion: "surprised" },
+    { duck: 0, text: "Не покажу. Вдруг ты её утащишь.", emotion: "angry" },
+    { duck: 1, text: "Да зачем она мне? Я просто полюбоваться хотел.", emotion: "sad" },
+    { duck: 0, text: "Ладно... смотри, но только одним глазом.", emotion: "neutral" },
+    { duck: 1, text: "Красота! А знаешь, ей место в нашем гнезде.", emotion: "happy" },
+    { duck: 0, text: "Эй, я её первый нашёл!", emotion: "angry" },
+    { duck: 1, text: "Нашёл — значит, теперь общая. Кряк!", emotion: "amused" },
+  ],
+  [
+    { duck: 0, text: "Давай устроим вечеринку у пруда!", emotion: "excited" },
+    { duck: 1, text: "А повод какой? Просто так вечеринок не бывает.", emotion: "curious" },
+    { duck: 0, text: "Повод — мы сегодня ни разу не упали!", emotion: "happy" },
+    { duck: 1, text: "Это рекорд. Стоит отметить, согласен.", emotion: "amused" },
+    { duck: 0, text: "Я принесу хлебных крошек. Ты — хорошее настроение.", emotion: "happy" },
+    { duck: 1, text: "А кто музыку крякать будет?", emotion: "curious" },
+    { duck: 0, text: "Ты, конечно. У тебя самый звонкий кряк.", emotion: "amused" },
+    { duck: 1, text: "Ну держись, я дам концерт!", emotion: "excited" },
+  ],
+];
+
 function buildSystem(whiteName, blueName, scenario) {
   return [
     `You are writing the dialogue for two rubber-duck robots in a toy simulator.`,
@@ -256,6 +310,37 @@ export function normalizeDialogue(raw) {
   return out;
 }
 
+// Fallback parser: "White: …" / "Белый: …" lines, for when the model ignores
+// the JSON instruction and just prints a script.
+function parsePlainText(text) {
+  const out = [];
+  const counts = [0, 0];
+  const re = /(white|blue|белый|белая|синий|синяя)\s*[:—–-]\s*([^\n]+)/gi;
+  let m;
+  while ((m = re.exec(String(text ?? ""))) !== null) {
+    const duck = /white|белый|белая/i.test(m[1]) ? 0 : 1;
+    const line = m[2].trim().replace(/\s+/g, " ");
+    if (!line || counts[duck] >= MAX_LINES_PER_DUCK) continue;
+    counts[duck]++;
+    out.push({ duck, text: line, emotion: "neutral" });
+  }
+  return out;
+}
+
+// Try structured JSON first, then a plain script; null if neither works.
+function parseDialogue(content) {
+  const structured = normalizeDialogue(extractJson(content));
+  if (structured.length) return structured;
+  const plain = parsePlainText(content);
+  if (plain.length) return plain;
+  return null;
+}
+
+function pickFallback() {
+  const d = FALLBACK_DIALOGUES[(Math.random() * FALLBACK_DIALOGUES.length) | 0];
+  return d.map((l) => ({ ...l }));
+}
+
 // ── API call (through the local proxy) ─────────────────────────────────
 export async function generateDialogue({ whiteName = "White", blueName = "Blue" } = {}) {
   const gate = canChat();
@@ -306,11 +391,10 @@ export async function generateDialogue({ whiteName = "White", blueName = "Blue" 
   const data = await res.json();
   const content = data?.choices?.[0]?.message?.content;
   recordUsage(data?.usage?.total_tokens ?? estimateTokens(body, content));
-  const parsed = extractJson(content);
-  const lines = normalizeDialogue(parsed);
-  if (!lines.length) {
-    console.warn("[chat] no usable dialogue. raw content:", content);
-    throw new Error("The model returned no usable dialogue. Try again.");
-  }
-  return lines;
+  const lines = parseDialogue(content);
+  if (lines) return lines;
+  // Never surface a "no dialogue" failure: fall back to a curated chat so
+  // the ducks always have something to say.
+  console.warn("[chat] unparsable content, using fallback dialogue:", content);
+  return pickFallback();
 }
