@@ -43,19 +43,20 @@ export function createReelProps({ scene, mainRig, friendRig }) {
 
   // ── Empty trough (кадка), smaller, with a few leftover crumbs ─────────
   const trough = new THREE.Group();
-  const tub = new THREE.Mesh(new THREE.CylinderGeometry(0.17, 0.13, 0.22, 40, 1, true), wood);
-  tub.position.y = 0.11;
+  // shallow dish (a third of the old height) so the crumbs are visible
+  const tub = new THREE.Mesh(new THREE.CylinderGeometry(0.20, 0.17, 0.075, 40, 1, true), wood);
+  tub.position.y = 0.0375;
   const inner = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.145, 0.11, 0.20, 40, 1, true),
+    new THREE.CylinderGeometry(0.18, 0.15, 0.065, 40, 1, true),
     woodDark,
   );
-  inner.position.y = 0.10;
-  const bottom = new THREE.Mesh(new THREE.CircleGeometry(0.13, 40), woodDark);
+  inner.position.y = 0.033;
+  const bottom = new THREE.Mesh(new THREE.CircleGeometry(0.17, 40), woodDark);
   bottom.rotation.x = -Math.PI / 2;
   bottom.position.y = 0.004;
-  const rim = new THREE.Mesh(new THREE.TorusGeometry(0.17, 0.015, 10, 48), woodDark);
+  const rim = new THREE.Mesh(new THREE.TorusGeometry(0.20, 0.012, 10, 48), woodDark);
   rim.rotation.x = Math.PI / 2;
-  rim.position.y = 0.22;
+  rim.position.y = 0.075;
   trough.add(tub, inner, bottom, rim);
 
   // leftover food crumbs scattered on the bottom
@@ -76,7 +77,7 @@ export function createReelProps({ scene, mainRig, friendRig }) {
 
   // ── Flower (world-anchored to whichever beak currently holds it) ──────
   const flower = buildFlower();
-  flower.scale.setScalar(0.55);
+  flower.scale.setScalar(0.45);
   flower.visible = false;
   group.add(flower);
 
