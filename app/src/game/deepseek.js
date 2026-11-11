@@ -163,9 +163,11 @@ const SCENARIOS = [
 function buildSystem(whiteName, blueName, scenario) {
   return [
     `You are writing the dialogue for two rubber-duck robots in a toy simulator.`,
-    `One duck is "${whiteName}" and the other is "${blueName}".`,
-    `Situation right now: ${scenario}. Start INSIDE this scene - no greetings, no`,
-    `"привет" and no introductions; jump straight into the middle of the conversation.`,
+    `One duck is "${whiteName}" and the other is "${blueName}". Always call them exactly`,
+    `"${whiteName}" and "${blueName}" — never translate their names.`,
+    `Situation right now: ${scenario}. Use it as a spark to start, but don't fixate on it —`,
+    `keep the conversation flowing naturally and stay on one coherent topic. Start INSIDE`,
+    `this scene - no greetings, no "привет" and no introductions.`,
     `Write every line of dialogue in Russian (Cyrillic).`,
     `Make it lively, funny and natural: short spoken lines (roughly 2 to 14 words),`,
     `personality, teasing, interjections (ой, ну, ага, эй), surprises, and real emotion.`,
@@ -197,18 +199,22 @@ function normalizeEmotion(token) {
   return EMOTIONS.includes(t) ? t : "neutral";
 }
 
-// Extract the first JSON object out of a possibly fenced / prefixed reply.
+// Extract the first JSON value (object or array) out of a possibly fenced /
+// prefixed reply.
 export function extractJson(text) {
   const s = String(text ?? "");
   const fence = s.match(/```(?:json)?\s*([\s\S]*?)```/i);
   const candidate = fence ? fence[1] : s;
-  const open = candidate.indexOf("{");
+  const brace = candidate.indexOf("{");
+  const bracket = candidate.indexOf("[");
+  let open = brace;
+  if (brace < 0 || (bracket >= 0 && bracket < brace)) open = bracket;
   if (open < 0) return null;
   let depth = 0;
   for (let i = open; i < candidate.length; i++) {
     const c = candidate[i];
-    if (c === "{") depth++;
-    else if (c === "}") {
+    if (c === "{" || c === "[") depth++;
+    else if (c === "}" || c === "]") {
       depth--;
       if (depth === 0) {
         const slice = candidate.slice(open, i + 1);
@@ -235,7 +241,7 @@ export function normalizeDialogue(raw) {
   const counts = [0, 0];
   let duck = null;
   for (const entry of lines) {
-    const text = String(entry?.line ?? entry?.text ?? "").trim().replace(/\s+/g, " ");
+    const text = String(entry?.line ?? entry?.text ?? entry?.content ?? entry?.message ?? "").trim().replace(/\s+/g, " ");
     if (!text) continue;
     if (duck == null) {
       duck = entry?.duck != null ? duckIndex(entry.duck) : entry?.speaker != null ? duckIndex(entry.speaker) : 0;
@@ -292,6 +298,9 @@ export async function generateDialogue({ whiteName = "White", blueName = "Blue" 
         "DeepSeek balance is empty. DeepSeek is prepaid, so it never goes negative or bills beyond your balance — top up to keep chatting.",
       );
     }
+    if (res.status === 401 || /authentication|invalid api key/i.test(detail)) {
+      throw new Error("DeepSeek rejected the API key. Open Settings (Esc) and re-save it.");
+    }
     throw new Error(detail || `Chat error ${res.status}.`);
   }
   const data = await res.json();
@@ -300,6 +309,7 @@ export async function generateDialogue({ whiteName = "White", blueName = "Blue" 
   const parsed = extractJson(content);
   const lines = normalizeDialogue(parsed);
   if (!lines.length) {
+    console.warn("[chat] no usable dialogue. raw content:", content);
     throw new Error("The model returned no usable dialogue. Try again.");
   }
   return lines;

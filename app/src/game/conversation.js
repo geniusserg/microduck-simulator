@@ -22,10 +22,8 @@ const ARRIVE_DIST = 0.4; // m from target = "arrived"
 const APPROACH_TIMEOUT = 14; // s before we give up walking and just talk
 const SPEED = 0.22; // legs forward speed while approaching
 const TURN = 1.0; // max yaw rate
-const HEAD_OFFSET = 0.17; // bubble clearance above the head body origin
 const LINE_PAUSE_MS = 420; // gap between lines (bubble hidden)
 const MIN_LINE_MS = 1100; // shortest time a line stays up
-const WORLD_W = 1.5; // bubble width in world units
 
 function yawOf(q) {
   return Math.atan2(2 * (q[3] * q[6] + q[4] * q[5]), 1 - 2 * (q[5] * q[5] + q[6] * q[6]));
@@ -109,6 +107,7 @@ function waddleCommand(q, homeX, homeY, t, phaseOffset, cmd) {
 
 export function createConversation({
   scene,
+  camera,
   rig,
   getFriend,
   getMainQ,
@@ -146,127 +145,82 @@ export function createConversation({
     friendFace: 0,
   };
 
-  // ── Speech bubbles (three.js sprites always face the camera) ──────────
-  const bubbles = [makeBubble("#ff7a2f"), makeBubble("#2ff0e6")];
+  // ── Speech labels: plain HTML text floated just above the duck's head ──
+  // (projected to screen each frame), so the text is always crisp and
+  // readable instead of a world-scaled sprite.
+  const bubbles = [makeLabel(), makeLabel()];
 
-  function makeBubble(accent) {
-    const canvas = document.createElement("canvas");
-    const tex = new THREE.CanvasTexture(canvas);
-    tex.minFilter = THREE.LinearFilter;
-    tex.generateMipmaps = false;
-    const mat = new THREE.SpriteMaterial({
-      map: tex,
-      transparent: true,
-      depthTest: false,
-      depthWrite: false,
+  function makeLabel() {
+    const el = document.createElement("div");
+    Object.assign(el.style, {
+      position: "fixed",
+      left: "0px",
+      top: "0px",
+      transform: "translate(-50%, -100%)",
+      pointerEvents: "none",
+      zIndex: "60",
+      display: "none",
+      maxWidth: "min(28rem, 82vw)",
+      fontFamily: 'system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif',
+      fontSize: "1rem",
+      lineHeight: "1.4",
+      fontWeight: "500",
+      color: "#ffffff",
+      background: "rgba(8, 8, 12, 0.78)",
+      borderRadius: "10px",
+      padding: "0.45rem 0.75rem",
+      textAlign: "center",
+      whiteSpace: "normal",
+      overflowWrap: "anywhere",
     });
-    const sprite = new THREE.Sprite(mat);
-    sprite.visible = false;
-    sprite.renderOrder = 999;
-    scene.add(sprite);
-    return { canvas, tex, sprite, accent, worldH: 0 };
-  }
-
-  function roundRect(ctx, x, y, w, h, r) {
-    ctx.beginPath();
-    ctx.moveTo(x + r, y);
-    ctx.arcTo(x + w, y, x + w, y + h, r);
-    ctx.arcTo(x + w, y + h, x, y + h, r);
-    ctx.arcTo(x, y + h, x, y, r);
-    ctx.arcTo(x, y, x + w, y, r);
-    ctx.closePath();
+    document.body.appendChild(el);
+    return el;
   }
 
   function setBubbleText(which, text) {
-    const b = bubbles[which];
-    const ctx = b.canvas.getContext("2d");
-    // Plain, smaller, easy-to-read type (no display font) for the dialogue.
-    const font = '500 24px system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif';
-    ctx.font = font;
-    const maxW = 400;
-    const words = String(text).split(/\s+/);
-    const lines = [];
-    let cur = "";
-    for (const w of words) {
-      const test = cur ? cur + " " + w : w;
-      if (ctx.measureText(test).width > maxW && cur) {
-        lines.push(cur);
-        cur = w;
-      } else {
-        cur = test;
-      }
-    }
-    if (cur) lines.push(cur);
-
-    const lineH = 30;
-    const padX = 18;
-    const padY = 14;
-    const textW = Math.max(...lines.map((l) => ctx.measureText(l).width));
-    const w = Math.ceil(textW + padX * 2);
-    const h = Math.ceil(lines.length * lineH + padY * 2 + 14);
-    b.canvas.width = w;
-    b.canvas.height = h;
-
-    const c = b.canvas.getContext("2d");
-    c.font = font;
-    c.textBaseline = "middle";
-    c.fillStyle = "#faf8f2";
-    c.strokeStyle = "#101018";
-    c.lineWidth = 5;
-    c.lineJoin = "round";
-    roundRect(c, 2.5, 2.5, w - 5, h - 19, 18);
-    c.fill();
-    c.stroke();
-    // Tail pointing down toward the duck's head.
-    c.beginPath();
-    c.moveTo(w / 2 - 16, h - 20);
-    c.lineTo(w / 2 + 16, h - 20);
-    c.lineTo(w / 2, h - 3);
-    c.closePath();
-    c.fillStyle = b.accent;
-    c.fill();
-    c.stroke();
-    // Re-stroke the body so the tail overlaps cleanly.
-    c.fillStyle = "#101018";
-    lines.forEach((l, i) => c.fillText(l, padX, padY + 6 + lineH * (i + 0.5)));
-    b.tex.needsUpdate = true;
-    b.worldH = (h / w) * WORLD_W;
-    b.sprite.scale.set(WORLD_W, b.worldH, 1);
-    b.sprite.visible = true;
+    const el = bubbles[which];
+    el.textContent = text;
+    el.style.display = text ? "block" : "none";
   }
-
   function clearBubble(which) {
-    bubbles[which].sprite.visible = false;
+    bubbles[which].style.display = "none";
   }
   function clearBubbles() {
     clearBubble(0);
     clearBubble(1);
   }
 
-  function headWorldPos(rig) {
+  function headScreenPos(rig) {
     const head = rig?.bodies?.get("jaw_soft");
     if (!head) return null;
     head.updateWorldMatrix(true, false);
     _v.setFromMatrixPosition(head.matrixWorld);
+    _v.y += 0.26; // a little above the head
+    _v.project(camera);
     return _v;
   }
 
   function positionBubble(which, rig) {
-    const b = bubbles[which];
-    if (!b.sprite.visible || !rig) return;
-    const p = headWorldPos(rig);
-    if (!p) {
-      b.sprite.visible = false;
+    const el = bubbles[which];
+    if (el.style.display === "none" || !rig) return;
+    const ndc = headScreenPos(rig);
+    if (!ndc || ndc.z > 1 || ndc.z < -1) {
+      el.style.display = "none";
       return;
     }
-    b.sprite.position.set(p.x, p.y + HEAD_OFFSET + b.worldH / 2, p.z);
+    const x = (ndc.x * 0.5 + 0.5) * window.innerWidth;
+    const y = (-ndc.y * 0.5 + 0.5) * window.innerHeight;
+    el.style.left = `${x}px`;
+    el.style.top = `${y - 8}px`;
   }
 
   // ── Duck voice (emotion clips, no TTS) ────────────────────────────────
   // Fire-and-forget: the clip's own viseme track (voiceFrame) drives the
   // beak, and the next line's playVoice() stops the previous clip.
   function playLineVoice(emotion) {
-    playVoice(clipFor(emotion)).catch(() => {});
+    // Random pitch/tempo per line keeps the duck sounds varied.
+    const rate = 0.85 + Math.random() * 0.3; // 0.85–1.15
+    playVoice(clipFor(emotion), undefined, false, 0, rate).catch(() => {});
   }
 
   // ── Sequence ──────────────────────────────────────────────────────────
@@ -391,6 +345,7 @@ export function createConversation({
         tickSpeech();
       }
     }
+    camera.updateMatrixWorld(true);
     positionBubble(0, rig);
     positionBubble(1, getFriend()?.rig);
 

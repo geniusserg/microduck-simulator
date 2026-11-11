@@ -1476,6 +1476,7 @@ async function boot({ scene, camera, renderer }) {
   // are observed through `friend` rather than a stale capture.
   conversation = createConversation({
     scene,
+    camera,
     rig,
     getFriend: () => friend,
     getMainQ: () => data.qpos,

@@ -48,10 +48,12 @@ export async function playVoice(
   onEnd = () => {},
   isAutomatic = false,
   offset = 0,
+  rate = 1,
 ) {
   stopVoice();
   const audio = new Audio(`./duck-voice/${name}.wav?v=clean1`);
   audio.dataset.clip = name;
+  if (rate && rate !== 1) audio.playbackRate = rate; // vary pitch/tempo
   if (offset > 0) audio.currentTime = offset;
   player = audio;
   automatic = isAutomatic;
