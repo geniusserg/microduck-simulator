@@ -19,7 +19,6 @@ import { playVoice, voiceFrame, stopVoice } from "./voice.js";
 // ── Tuning ──────────────────────────────────────────────────────────────
 const MEET_OFFSET = 0.6; // each duck stops this far from the meet center
 const ARRIVE_DIST = 0.4; // m from target = "arrived"
-const ARRIVE_YAW = 0.4; // rad of face-to-face alignment tolerance
 const APPROACH_TIMEOUT = 14; // s before we give up walking and just talk
 const SPEED = 0.22; // legs forward speed while approaching
 const TURN = 1.0; // max yaw rate
@@ -44,13 +43,15 @@ const clampMeet = (v) => Math.max(-1.2, Math.min(1.2, v));
 // duck "talks" like the microduck and the clip's viseme track (voice.js)
 // drives the beak. Long songs are excluded; a few clips are picked at
 // random per emotion for variety.
+// Only clips with a viseme track in voice-frames.json (the songs and the
+// newer effects like snarl/challenge have no frames, so they stay out).
 const EMOTION_CLIPS = {
   neutral: ["mmh", "curious"],
   happy: ["yes", "yes_fast", "excited"],
   excited: ["excited"],
   curious: ["curious"],
   sad: ["sad", "no", "mmh"],
-  angry: ["angry", "defiant", "snarl", "challenge"],
+  angry: ["angry", "defiant", "impatient", "mock"],
   amused: ["laugh", "mock"],
   surprised: ["curious", "excited"],
 };
@@ -77,11 +78,33 @@ function steer(q, tx, ty, face, cmd) {
     cmd[2] = Math.max(-TURN, Math.min(TURN, 2 * error));
     return false;
   }
+  // Close enough: keep a gentle forward waddle toward the target so the
+  // gait never freezes; the speak phase takes over the motion next update.
   const err = wrapPi(face - yaw);
-  cmd[0] = 0;
+  cmd[0] = 0.12;
   cmd[1] = 0;
-  cmd[2] = Math.max(-TURN, Math.min(TURN, 3 * err));
-  return Math.abs(err) < ARRIVE_YAW;
+  cmd[2] = Math.max(-TURN, Math.min(TURN, 2 * err));
+  return true;
+}
+
+// Gentle waddle used while talking: each duck keeps walking in slow loops
+// around its meet spot so the waddle gait never stops, instead of standing
+// frozen while it speaks.
+function waddleCommand(q, homeX, homeY, t, phaseOffset, cmd) {
+  const x = q[0];
+  const y = q[1];
+  const yaw = yawOf(q);
+  const ang = phaseOffset + t * 0.35;
+  const tx = homeX + 0.28 * Math.cos(ang);
+  const ty = homeY + 0.28 * Math.sin(ang);
+  const heading = Math.atan2(ty - y, tx - x);
+  const angle = heading - yaw;
+  const reverse = Math.cos(angle) < -0.35;
+  const delta = angle + (reverse ? Math.PI : 0);
+  const error = Math.atan2(Math.sin(delta), Math.cos(delta));
+  cmd[0] = (reverse ? -0.5 : 1) * 0.16 * Math.max(0.25, Math.cos(error));
+  cmd[1] = 0;
+  cmd[2] = Math.max(-0.7, Math.min(0.7, 1.5 * error));
 }
 
 export function createConversation({
@@ -112,6 +135,7 @@ export function createConversation({
     speechEndAt: 0,
     lineEndAt: 0,
     approachT: 0,
+    speakT: 0, // seconds in the "speak" phase, drives the waddle
     arrivedMain: false,
     arrivedFriend: false,
     mainTx: 0,
@@ -267,6 +291,7 @@ export function createConversation({
     const now = performance.now();
     if (state.flap && now >= state.speechEndAt) {
       state.flap = false;
+      stopVoice(); // cut the emotion clip cleanly at the end of the line
       clearBubble(state.speaker);
     }
     if (now >= state.lineEndAt) {
@@ -315,20 +340,29 @@ export function createConversation({
   }
 
   function mainCommand() {
-    if (!state.active || state.phase !== "approach") {
+    if (!state.active) {
       mainCmd.fill(0);
       return mainCmd;
     }
-    computeCommands();
+    if (state.phase === "approach") {
+      computeCommands();
+      return mainCmd;
+    }
+    // Speak phase: keep waddling around the meet spot.
+    waddleCommand(getMainQ(), state.mainTx, state.mainTy, state.speakT, 0, mainCmd);
     return mainCmd;
   }
 
   function friendCommand() {
-    if (!state.active || state.phase !== "approach") {
+    if (!state.active) {
       friendCmd.fill(0);
       return friendCmd;
     }
-    computeCommands();
+    if (state.phase === "approach") {
+      computeCommands();
+      return friendCmd;
+    }
+    waddleCommand(getFriendQ(), state.friendTx, state.friendTy, state.speakT, Math.PI, friendCmd);
     return friendCmd;
   }
 
@@ -343,13 +377,19 @@ export function createConversation({
     if (state.phase === "approach") {
       computeCommands();
       const arrived = state.arrivedMain && state.arrivedFriend;
-      if (state.lines.length && (arrived || state.approachT > APPROACH_TIMEOUT)) {
+      if (arrived || state.approachT > APPROACH_TIMEOUT) {
         state.phase = "speak";
+        state.speakT = 0;
         setStore({ conversation: { status: "speak", speaker: -1, text: "" } });
-        beginLine(0);
+        if (state.lines.length) beginLine(0);
       }
     } else if (state.phase === "speak") {
-      tickSpeech();
+      state.speakT += dt;
+      if (state.lines.length && state.lineIndex === -1) {
+        beginLine(0);
+      } else if (state.lineIndex >= 0) {
+        tickSpeech();
+      }
     }
     positionBubble(0, rig);
     positionBubble(1, getFriend()?.rig);
@@ -394,6 +434,7 @@ export function createConversation({
     state.active = true;
     state.phase = "approach";
     state.approachT = 0;
+    state.speakT = 0;
     state.lines = [];
     state.lineIndex = -1;
     state.speaker = -1;

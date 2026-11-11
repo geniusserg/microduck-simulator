@@ -183,10 +183,11 @@ function buildSystem(whiteName, blueName) {
     `You are writing the dialogue for two rubber-duck robots in a toy simulator.`,
     `One duck is "${whiteName}" and the other is "${blueName}". They just waddled together to chat.`,
     `Write a warm, playful, natural back-and-forth between them. Strictly alternate speakers.`,
+    `Write every line of dialogue in Russian (Cyrillic).`,
     `Each duck speaks at most ${TARGET_LINES_PER_DUCK} lines. If a final line is needed to end the`,
     `conversation gracefully (a greeting, small talk, then a goodbye), you may go up to`,
     `${MAX_LINES_PER_DUCK} lines per duck, but never more, and never leave the chat hanging.`,
-    `Keep each line short and spoken (roughly 3 to 18 words). Duck-appropriate topics: the pond,`,
+    `Keep each line short and spoken (roughly 3 to 14 words). Duck-appropriate topics: the pond,`,
     `the weather, snacks, their little sports games, waddling. No humans, no code, no lists.`,
     `Each line also carries an "emotion" - the duck's feeling for that line - chosen from exactly`,
     `this set: ${EMOTIONS.join(", ")}. Vary them to match the flow of the chat.`,
@@ -196,7 +197,7 @@ function buildSystem(whiteName, blueName) {
   ].join(" ");
 }
 
-const USER_PROMPT = "Two ducks meet in the meadow. Write their short conversation now.";
+const USER_PROMPT = "Две утки встретились на лугу. Напиши их короткий разговор на русском.";
 
 // ── Response normalization ──────────────────────────────────────────────
 // Map model speaker tokens ("white"/"blue", "0"/"1", "a"/"b") to 0/1.
