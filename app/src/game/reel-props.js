@@ -117,14 +117,14 @@ export function createReelProps({ scene, mainRig, friendRig }) {
     }
     const sign = which === "blue" ? -1 : 1; // duck forward along world x
     flower.position.copy(beak);
-    flower.rotation.set(0, 0, sign > 0 ? 0 : Math.PI);
+    flower.rotation.set(0, sign > 0 ? 0 : Math.PI, 0);
     flower.visible = true;
   }
 
   // Lying flat on the ground in front of White.
   function flowerGround() {
     flower.position.copy(GROUND);
-    flower.rotation.set(0, 0, Math.PI);
+    flower.rotation.set(0, Math.PI, 0);
     flower.visible = true;
   }
 
@@ -132,7 +132,7 @@ export function createReelProps({ scene, mainRig, friendRig }) {
   function flowerLower(u) {
     const beak = beakWorld(friendRig) || GROUND;
     flower.position.lerpVectors(beak, GROUND, u);
-    flower.rotation.set(0, 0, Math.PI);
+    flower.rotation.set(0, Math.PI, 0);
     flower.visible = true;
   }
 
@@ -140,7 +140,18 @@ export function createReelProps({ scene, mainRig, friendRig }) {
   function flowerPickup(u) {
     const beak = beakWorld(mainRig) || GROUND;
     flower.position.lerpVectors(GROUND, beak, u);
-    flower.rotation.set(0, 0, Math.PI * (1 - u));
+    flower.rotation.set(0, Math.PI * (1 - u), 0);
+    flower.visible = true;
+  }
+
+  // Beak-to-beak hand-off: the flower travels in a straight, continuous line
+  // from Blue's beak to White's, while both lean in — never released, never
+  // thrown (u 0..1).
+  function flowerSwap(u) {
+    const b = beakWorld(friendRig) || GROUND;
+    const w = beakWorld(mainRig) || GROUND;
+    flower.position.lerpVectors(b, w, u);
+    flower.rotation.set(0, Math.PI * (1 - u), 0);
     flower.visible = true;
   }
 
@@ -152,5 +163,6 @@ export function createReelProps({ scene, mainRig, friendRig }) {
     flowerGround,
     flowerLower,
     flowerPickup,
+    flowerSwap,
   };
 }
