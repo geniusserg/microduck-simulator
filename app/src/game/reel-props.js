@@ -1,8 +1,37 @@
 // Reel-only props for the video scenes: an empty feeding trough in the
-// middle of the meadow and a flower the blue duck can hold in its beak.
-// Built only when the sim is opened with ?reel=1 so normal play stays
-// untouched. Exposed as window.rl.reelProps for the CDP render scripts.
+// middle of the meadow and a flower that is anchored to a duck's actual
+// jaw (its world bounding-box centre) every frame, so it reads as held
+// IN the beak — never floating. Built only for ?reel=1.
 import * as THREE from "three";
+
+function buildFlower() {
+  const g = new THREE.Group();
+  const green = new THREE.MeshStandardMaterial({ color: 0x4f9d46, roughness: 0.7, metalness: 0 });
+  const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.013, 0.24, 8), green);
+  stem.position.y = 0.11;
+  const leaf = new THREE.Mesh(new THREE.SphereGeometry(0.032, 8, 6), green);
+  leaf.scale.set(1.7, 0.35, 0.55);
+  leaf.position.set(0.024, 0.11, 0);
+  const center = new THREE.Mesh(
+    new THREE.SphereGeometry(0.032, 10, 8),
+    new THREE.MeshStandardMaterial({ color: 0xffd23f, roughness: 0.5, metalness: 0 }),
+  );
+  center.position.y = 0.24;
+  g.add(stem, leaf, center);
+  const petalColors = [0xfff9d7, 0xd6c2ed, 0xffd23f, 0xfff9d7, 0xd6c2ed, 0xfff9d7];
+  for (let i = 0; i < 6; i++) {
+    const a = (i / 6) * Math.PI * 2;
+    const petal = new THREE.Mesh(
+      new THREE.SphereGeometry(0.036, 8, 6),
+      new THREE.MeshStandardMaterial({ color: petalColors[i], roughness: 0.5, metalness: 0 }),
+    );
+    petal.scale.set(1.55, 0.42, 1);
+    petal.position.set(Math.cos(a) * 0.052, 0.24, Math.sin(a) * 0.052);
+    petal.rotation.y = -a;
+    g.add(petal);
+  }
+  return g;
+}
 
 export function createReelProps({ scene, mainRig, friendRig }) {
   const group = new THREE.Group();
@@ -31,45 +60,45 @@ export function createReelProps({ scene, mainRig, friendRig }) {
   trough.position.set(0, 0, 0);
   group.add(trough);
 
-  // ── Flower ────────────────────────────────────────────────────────────
-  const flower = new THREE.Group();
-  const green = new THREE.MeshStandardMaterial({ color: 0x4f9d46, roughness: 0.7, metalness: 0 });
-  const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.012, 0.24, 8), green);
-  stem.position.y = 0.11;
-  const leaf = new THREE.Mesh(new THREE.SphereGeometry(0.03, 8, 6), green);
-  leaf.scale.set(1.7, 0.35, 0.55);
-  leaf.position.set(0.022, 0.11, 0);
-  const center = new THREE.Mesh(
-    new THREE.SphereGeometry(0.03, 10, 8),
-    new THREE.MeshStandardMaterial({ color: 0xffd23f, roughness: 0.5, metalness: 0 }),
-  );
-  center.position.y = 0.23;
-  flower.add(stem, leaf, center);
-  const petalColors = [0xfff9d7, 0xd6c2ed, 0xffd23f, 0xfff9d7, 0xd6c2ed, 0xfff9d7];
-  for (let i = 0; i < 6; i++) {
-    const a = (i / 6) * Math.PI * 2;
-    const petal = new THREE.Mesh(
-      new THREE.SphereGeometry(0.034, 8, 6),
-      new THREE.MeshStandardMaterial({ color: petalColors[i], roughness: 0.5, metalness: 0 }),
-    );
-    petal.scale.set(1.55, 0.42, 1);
-    petal.position.set(Math.cos(a) * 0.05, 0.23, Math.sin(a) * 0.05);
-    petal.rotation.y = -a;
-    flower.add(petal);
-  }
-  flower.scale.setScalar(0.62);
+  // ── Flower (world-anchored to whichever beak currently holds it) ──────
+  const flower = buildFlower();
+  flower.scale.setScalar(0.55);
   flower.visible = false;
   group.add(flower);
 
+  const _box = new THREE.Box3();
   const _p = new THREE.Vector3();
-  function flowerOn(rig, forwardSign) {
+
+  function beakWorld(rig) {
     const head = rig?.bodies?.get("jaw_soft");
-    if (!head) return;
+    if (!head) return null;
+    let jawMesh = null;
+    head.traverse((o) => {
+      if (o.isMesh && o.userData.meshName === "jaw.stl") jawMesh = o;
+    });
+    if (!jawMesh) return null;
     head.updateWorldMatrix(true, true);
-    head.getWorldPosition(_p);
-    // Hold it at the beak: forward of the head, a touch lower, tilted.
-    flower.position.set(_p.x + forwardSign * 0.09, _p.y - 0.03, _p.z);
-    flower.rotation.z = -forwardSign * 0.4;
+    _box.setFromObject(jawMesh);
+    if (!Number.isFinite(_box.getCenter(_p).x)) return null;
+    return _box.getCenter(new THREE.Vector3());
+  }
+
+  // which: "blue" | "white" | null. Repositioned every frame by the renderer.
+  function flowerOn(which) {
+    if (which !== "blue" && which !== "white") {
+      flower.visible = false;
+      return;
+    }
+    const rig = which === "blue" ? friendRig : mainRig;
+    const beak = beakWorld(rig);
+    if (!beak) {
+      flower.visible = false;
+      return;
+    }
+    const sign = which === "blue" ? -1 : 1;
+    flower.position.copy(beak);
+    flower.position.y += 0.02; // emerge from the mouth
+    flower.rotation.set(0, 0, -sign * 0.35);
     flower.visible = true;
   }
 
@@ -77,10 +106,6 @@ export function createReelProps({ scene, mainRig, friendRig }) {
     group,
     trough,
     flower,
-    flowerOnWhite: () => flowerOn(mainRig, 1),
-    flowerOnBlue: () => flowerOn(friendRig, -1),
-    showFlower: (on) => {
-      flower.visible = !!on;
-    },
+    flowerOn,
   };
 }
