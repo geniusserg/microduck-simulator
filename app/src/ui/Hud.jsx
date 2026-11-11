@@ -15,6 +15,16 @@ import { keyframes } from "@mui/material/styles";
 import { useGame, gameApi } from "../store.js";
 import { VARIANT_LABELS, VARIANT_SWATCH_HEX } from "../game/variants.js";
 import { uiClick, isMuted, setMuted } from "../game/audio.js";
+import {
+  getApiKey,
+  setApiKey,
+  clearApiKey,
+  getSettings,
+  setSettings,
+  usageSummary,
+  canChat,
+  resetUsage,
+} from "../game/deepseek.js";
 import { stopVoice, playVoice, stopAutomaticVoice, voiceBusy } from "../game/voice.js";
 import { ORANGE, MONO } from "../theme.js";
 import { ANTON, COMIC_INK, CREAM } from "./comic.jsx";
@@ -294,6 +304,267 @@ function VoicePanel({ random, toggleRandom }) {
       </Box>
       {error && <span role="alert">{error}</span>}
     </HudPlate>
+  );
+}
+
+// "Talk": two ducks waddle together and chat via the DeepSeek API. First
+// use prompts for an API key (kept in localStorage only), then starts the
+// conversation; while one is running the button reads "Stop chat".
+const hudInputSx = {
+  appearance: "none",
+  fontFamily: MONO,
+  fontSize: "0.7rem",
+  letterSpacing: "0.06em",
+  color: CREAM,
+  background: "rgba(8, 8, 12, 0.55)",
+  border: `1px solid rgba(250, 248, 242, 0.3)`,
+  borderRadius: 0,
+  padding: "0.42rem 0.6rem",
+  margin: 0,
+  width: "16rem",
+  lineHeight: 1.4,
+  WebkitTapHighlightColor: "transparent",
+  "&:focus": { outline: `2px solid ${ORANGE}`, outlineOffset: -1 },
+};
+
+function TalkControl() {
+  const conv = useGame((s) => s.conversation);
+  const [panel, setPanel] = useState(false);
+  const [key, setKey] = useState("");
+  const [budget, setBudget] = useState(() => String(getSettings().dailyTokens));
+  const [note, setNote] = useState("");
+  const [usage, setUsage] = useState(() => usageSummary());
+  const active = conv?.status === "approach" || conv?.status === "speak";
+  const hasKey = !!getApiKey();
+
+  const refresh = () => {
+    setUsage(usageSummary());
+    setBudget(String(getSettings().dailyTokens));
+  };
+
+  const openPanel = () => {
+    uiClick();
+    refresh();
+    setNote("");
+    setPanel(true);
+  };
+
+  const onClickTalk = () => {
+    uiClick();
+    if (active) {
+      gameApi.stopConversation?.();
+      return;
+    }
+    if (!hasKey) {
+      openPanel();
+      return;
+    }
+    const gate = canChat();
+    if (!gate.ok) {
+      setNote(gate.reason);
+      setPanel(true);
+      return;
+    }
+    gameApi.startConversation?.();
+  };
+
+  const saveKey = () => {
+    const k = setApiKey(key);
+    if (!k) {
+      setNote("Paste a key first.");
+      return;
+    }
+    setKey("");
+    setNote("");
+    refresh();
+    gameApi.startConversation?.();
+  };
+
+  const clearKey = () => {
+    clearApiKey();
+    setNote("");
+    refresh();
+  };
+
+  const applyBudget = () => {
+    const n = Math.max(0, Math.round(Number(budget) || 0));
+    setSettings({ dailyTokens: n });
+    refresh();
+  };
+
+  const close = () => {
+    setPanel(false);
+    setNote("");
+  };
+
+  return (
+    <>
+      <Box
+        component="button"
+        type="button"
+        aria-pressed={active}
+        title="Two ducks meet and chat (DeepSeek)"
+        onClick={onClickTalk}
+        sx={{
+          ...hudHitSx,
+          px: 1,
+          color: active ? ORANGE : CREAM,
+          borderLeft: `1px solid rgba(250, 248, 242, 0.18)`,
+        }}
+      >
+        {active ? "Stop chat" : "Talk"}
+      </Box>
+      <Box
+        component="button"
+        type="button"
+        title="DeepSeek key & daily budget"
+        onClick={openPanel}
+        sx={{
+          ...hudHitSx,
+          px: "0.6rem",
+          color: "rgba(250, 248, 242, 0.62)",
+          borderLeft: `1px solid rgba(250, 248, 242, 0.18)`,
+          "&:hover": { color: ORANGE, background: "rgba(255, 122, 47, 0.12)" },
+        }}
+      >
+        Key
+      </Box>
+      {panel && (
+        <Box
+          sx={{
+            position: "fixed",
+            top: "5rem",
+            left: "50%",
+            transform: "translateX(-50%)",
+            zIndex: 30,
+            width: "21rem",
+            border: `2px solid ${CREAM}`,
+            background: GLASS,
+            boxShadow: `inset 0 0 0 1px ${COMIC_INK}`,
+            p: 1.5,
+            display: "flex",
+            flexDirection: "column",
+            gap: 1,
+          }}
+        >
+          <Box sx={{ display: "flex", alignItems: "center", gap: 1, flexWrap: "wrap" }}>
+            <Box
+              component="input"
+              type="password"
+              autoFocus
+              value={key}
+              placeholder={hasKey ? "sk-… (saved)" : "sk-…"}
+              aria-label="DeepSeek API key"
+              onChange={(e) => setKey(e.target.value)}
+              onKeyDown={(e) => {
+                e.stopPropagation();
+                if (e.key === "Enter") saveKey();
+                if (e.key === "Escape") close();
+              }}
+              sx={{ ...hudInputSx, flex: "1 1 9rem", width: "auto" }}
+            />
+            <Box component="button" type="button" onClick={saveKey} sx={{ ...hudHitSx, px: 1, color: CREAM }}>
+              Save
+            </Box>
+            {hasKey && (
+              <Box component="button" type="button" onClick={clearKey} sx={{ ...hudHitSx, px: 1, color: "rgba(250, 248, 242, 0.72)" }}>
+                Clear
+              </Box>
+            )}
+            <Box component="button" type="button" onClick={close} sx={{ ...hudHitSx, px: 1, color: "rgba(250, 248, 242, 0.72)" }}>
+              Done
+            </Box>
+          </Box>
+          <Box sx={{ display: "flex", alignItems: "center", gap: 1, flexWrap: "wrap" }}>
+            <Box
+              component="span"
+              sx={{ fontFamily: MONO, fontSize: "0.62rem", letterSpacing: "0.1em", color: CREAM, textTransform: "uppercase", whiteSpace: "nowrap" }}
+            >
+              Daily budget
+            </Box>
+            <Box
+              component="input"
+              type="number"
+              min="0"
+              value={budget}
+              aria-label="Daily token budget"
+              onChange={(e) => setBudget(e.target.value)}
+              onKeyDown={(e) => {
+                e.stopPropagation();
+                if (e.key === "Enter") applyBudget();
+              }}
+              sx={{ ...hudInputSx, width: "5.5rem", flex: "none" }}
+            />
+            <Box component="span" sx={{ fontFamily: MONO, fontSize: "0.62rem", color: "rgba(250, 248, 242, 0.6)", whiteSpace: "nowrap" }}>
+              tokens
+            </Box>
+            <Box component="button" type="button" onClick={applyBudget} sx={{ ...hudHitSx, px: 1, color: CREAM }}>
+              Set
+            </Box>
+            <Box component="button" type="button" onClick={() => { resetUsage(); refresh(); }} sx={{ ...hudHitSx, px: 1, color: "rgba(250, 248, 242, 0.72)" }}>
+              Reset
+            </Box>
+          </Box>
+          <Box
+            sx={{
+              fontFamily: MONO,
+              fontSize: "0.62rem",
+              letterSpacing: "0.08em",
+              color: "rgba(250, 248, 242, 0.72)",
+              lineHeight: 1.6,
+              textTransform: "uppercase",
+            }}
+          >
+            Today: {usage.used} / {usage.limit} tokens · resets midnight
+            <br />
+            Prepaid API — never goes negative or into debt. Key stays in this browser.
+          </Box>
+          {note && (
+            <Box role="alert" sx={{ fontFamily: MONO, fontSize: "0.62rem", color: "#ff4b3a", lineHeight: 1.5 }}>
+              {note}
+            </Box>
+          )}
+        </Box>
+      )}
+    </>
+  );
+}
+
+// Toast for a failed conversation (bad key, network, no dialogue).
+function ConversationToast() {
+  const conv = useGame((s) => s.conversation);
+  const err = conv?.status === "error" ? conv.error : "";
+  useEffect(() => {
+    if (!err) return;
+    const t = setTimeout(() => {
+      if (useGame.getState().conversation?.status === "error") {
+        useGame.setState({ conversation: null });
+      }
+    }, 9000);
+    return () => clearTimeout(t);
+  }, [err]);
+  if (!err) return null;
+  return (
+    <Box
+      role="alert"
+      sx={{
+        position: "fixed",
+        top: "9.2rem",
+        right: "1.5rem",
+        zIndex: 10,
+        maxWidth: "24rem",
+        fontFamily: MONO,
+        fontSize: "0.66rem",
+        letterSpacing: "0.1em",
+        textTransform: "uppercase",
+        textAlign: "right",
+        lineHeight: 1.7,
+        color: "#ff4b3a",
+        textShadow: "0 0 8px rgba(255, 75, 58, 0.45)",
+      }}
+    >
+      {`CHAT FAILED · ${err}`}
+    </Box>
   );
 }
 
@@ -691,6 +962,7 @@ export default function Hud() {
             <input type="checkbox" checked={recover} onKeyDown={e => e.stopPropagation()}
               onChange={e => useGame.setState({ recoverInPlace: e.target.checked })} /> Get up
           </Box>
+          <TalkControl />
         </HudPlate>
       </Box>
       )}
@@ -700,6 +972,7 @@ export default function Hud() {
           <Telemetry />
           <OsdLoad />
           <PolicyToast />
+          <ConversationToast />
         </>
       )}
     </>

@@ -64,6 +64,7 @@ import {skateImpact} from "./impact.js";
 import { sportEffects } from "./sport-effects.js";
 import {sportsField,createMatch,goalBars,FOOTBALL_RADIUS,isRace} from "./sports.js";
 import { createWander } from "./wander.js";
+import { createConversation } from "./conversation.js";
 import {saveClip,loadClip} from "./recordings.js";
 import { currentVoice,playVoice,voiceFrame, stopVoice, playReaction } from "./voice.js";
 import { initGhosts } from "./ghosts.js";
@@ -701,6 +702,7 @@ async function boot({ scene, camera, renderer }) {
   }
 
   function effectiveCmd() {
+    if (conversation?.active) return conversation.mainCommand();
     if (inputLocked || headMode || mode === "roll" || mode === "crouch" ||
         mode === "groundpick" || isKick() || postKickLock > 0 || recovery)
       return ZERO_CMD;
@@ -1158,6 +1160,7 @@ async function boot({ scene, camera, renderer }) {
   }
 
   let friend = null, impactCooldown=0, skidLoad=null;
+  let conversation = null; // assigned once the friend duck is built
   async function controlStep() {
     if (match && !inputLocked && !store().menuOpen) match.update(!!store().manual,controller.getCommand());
     if (wander.active) {
@@ -1435,7 +1438,7 @@ async function boot({ scene, camera, renderer }) {
       await controlStep();
       if (friend && store().entered && !store().menuOpen && !document.hidden) {
         if(recording && !inputLocked) recording.frames.push(snapshot());
-        await friend.step(data.qpos[0], data.qpos[1],match?.commands[1],ballActive?data.qpos.subarray(ballQposAdr):null);
+        await friend.step(data.qpos[0], data.qpos[1],conversation?.active ? conversation.friendCommand() : match?.commands[1],ballActive?data.qpos.subarray(ballQposAdr):null);
       }
       count++;
       const now = performance.now();
@@ -1468,6 +1471,31 @@ async function boot({ scene, camera, renderer }) {
     standKeyId, gyroAdr, trunkId, qposAdr, dofAdr, writeBodyObservation,
   });
   const meadowFriend = friend;
+  // Duck-duck conversation director (the "Talk" button). Built after the
+  // friend duck so both rigs exist; accessors are lazy so loco/env swaps
+  // are observed through `friend` rather than a stale capture.
+  conversation = createConversation({
+    scene,
+    rig,
+    getFriend: () => friend,
+    getMainQ: () => data.qpos,
+    getFriendQ: () => friend.position,
+    setStore,
+    setInputLock: (v) => setInputLock(v),
+    resumeWander: () => {
+      wander.start();
+      setStore({ wanderActivity: "Walking", stayQuiet: false });
+    },
+    shouldAbort: () =>
+      store().menuOpen ||
+      store().winterRink ||
+      !!match ||
+      loco !== "legs" ||
+      !!replay ||
+      !store().entered,
+    whiteName: "White",
+    blueName: "Blue",
+  });
   const shadow = contactShadow(scene);
   let trunkGroup = rig.bodies.get("trunk_base");
   locos.legs = {
@@ -2253,6 +2281,7 @@ async function boot({ scene, camera, renderer }) {
     }
     syncRig();
     syncJaw();
+    conversation?.update(dt);
     ghosts?.update();
     // Spatial audio follows the movers: listener on the camera, emitters
     // on the duck trunk and the ball (MJCF Z-up -> three Y-up).
@@ -2647,6 +2676,11 @@ async function boot({ scene, camera, renderer }) {
     startEntrance: () => ceremony.startEntrance(),
     loadCustomPolicy: (ref) => loadCustomPolicyIntoGame(ref),
     clearCustomPolicy: () => revertCustomPolicy(),
+    startConversation: () => conversation?.start(),
+    stopConversation: () => conversation?.stop(),
+    get conversationActive() {
+      return conversation?.active ?? false;
+    },
   });
 
   // Deterministic hooks for automated verification (rAF pauses in

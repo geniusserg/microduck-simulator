@@ -47,6 +47,10 @@ export const useGame = create(
     ballActive: false,
     // Throttled telemetry block (4 Hz), bottom-right OSD
     telemetry: { fps: 0, ctrlHz: 0, speed: 0, odo: 0, peers: 0 },
+    // Duck-duck conversation state, written by game/conversation.js:
+    // { status: "approach"|"speak"|"done"|"error", speaker: 0|1|-1,
+    //   text?, error? } — null while idle.
+    conversation: null,
   })),
 );
 
